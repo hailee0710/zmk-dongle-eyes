@@ -21,23 +21,23 @@ import math
 import os
 
 # --- constants, from the top of eyes_status.c ---
-EYE_W, EYE_H, EYE_R, EYE_DX = 56, 76, 24, 46
-LINE_W = 14
+EYE_W, EYE_H, EYE_R, EYE_DX = 46, 60, 19, 52
+LINE_W = 11
 OPEN_FULL = 256
 TRIG_MAX = 32767
 STRAIN_MIN = 216
 SPIRAL_PTS, SPIRAL_TURNS = 34, 900
 ANGRY_CUT_OUTER_PCT, ANGRY_CUT_INNER_PCT = 42, 78
-LID_TAIL = 14
+LID_TAIL = 11
 SPARK_PTS, SPARK_FILL_PCT = 33, 100
 ARC_PTS = 7
 CROP_TOP_PCT = 14
 RR_CORNER_PTS = 5
 QUIRK_UP_PCT, QUIRK_SMALL_PCT = 116, 62
-QUIRK_OUTLINE_W = 8
+QUIRK_OUTLINE_W = 6
 QUIRK_SMALL_D = EYE_W * QUIRK_SMALL_PCT // 100
 SQUINT_TO = 110
-WINK_SHUT_H = 12
+WINK_SHUT_H = 10
 LV_RADIUS_CIRCLE = -1  # stands in for LVGL's sentinel
 
 OPENNESS = OPEN_FULL  # fully open; a blink is this shape at a lower value
@@ -177,12 +177,12 @@ def twinkle(w, box_h, inset):
 EXPR = {
     "neutral":        ("bar", EYE_W, EYE_H, 0, 0, EYE_R, 0, 0, False, 0),
     "squeezed":       ("chevron", EYE_W, EYE_H, 0, 0, 0, 0, 0, False, 0),
-    "shock":          ("bar", 24, 24, 0, 0, 12, 0, 0, False, 0),
-    "sleepy":         ("arc", EYE_W, 30, 0, 12, 0, 0, 0, False, 0),
-    "unamused":       ("lidded", EYE_W + LID_TAIL, EYE_H // 2, 0, 0, 0, 9, 6, True, 0),
-    "angry":          ("angry", EYE_W, EYE_H, 0, -14, 0, 9, 0, True, 0),
-    "twinkle":        ("twinkle", EYE_W, EYE_H, 0, 0, 0, 9, 0, True, 0),
-    "confused":       ("spiral", 86, 86, 0, 0, 0, 8, 6, False, 0),
+    "shock":          ("bar", 20, 20, 0, 0, 10, 0, 0, False, 0),
+    "sleepy":         ("arc", EYE_W, 24, 0, 10, 0, 0, 0, False, 0),
+    "unamused":       ("lidded", EYE_W + LID_TAIL, EYE_H // 2, 0, 0, 0, 7, 5, True, 0),
+    "angry":          ("angry", EYE_W, EYE_H, 0, -11, 0, 7, 0, True, 0),
+    "twinkle":        ("twinkle", EYE_W, EYE_H, 0, 0, 0, 7, 0, True, 0),
+    "confused":       ("spiral", 68, 68, 0, 0, 0, 6, 6, False, 0),
     "wink":           ("bar", EYE_W, EYE_H, 0, 0, EYE_R, 0, 0, False, 0),
     "neutral_down":   ("cropped", EYE_W, EYE_H, 0, 7, 0, QUIRK_OUTLINE_W, 0, False, 0),
     "neutral_small":  ("bar", QUIRK_SMALL_D, QUIRK_SMALL_D, 0, 0, LV_RADIUS_CIRCLE,

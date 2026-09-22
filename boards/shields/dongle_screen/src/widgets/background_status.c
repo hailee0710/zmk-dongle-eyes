@@ -79,19 +79,23 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define BG_STRESS_COLOR 0x7B3FB0
 #define BG_STRESS_MAX_OPA 200
 #define BG_STRESS_W 3
-#define BG_STRESS_LEN_MIN 16
-#define BG_STRESS_LEN_MAX 74
+// Held above the face. The eyes reach up to about y=58 on a 172px panel, and a
+// stroke that ran past them would read as pressure on the eyes themselves
+// rather than as atmosphere behind the whole screen - the 74px this used to
+// reach on a 240px panel went most of the way down it.
+#define BG_STRESS_LEN_MIN 12
+#define BG_STRESS_LEN_MAX 52
 
 // A blue wash behind the strokes. Vertical gradient into black, which is the
 // screen's own colour, so it fades out rather than ending on an edge. Taller
 // than the longest stroke so they finish inside it rather than hanging past it.
 #define BG_GRAD_COLOR 0x263A96
-#define BG_GRAD_H 96
+#define BG_GRAD_H 64
 #define BG_GRAD_MAX_OPA 130
 // The wash reaches down further as the pressure builds, so it grows rather than
 // only brightening. Starts shallow rather than at nothing, since a gradient a
 // couple of pixels tall is a line, not a wash.
-#define BG_GRAD_H_MIN 22
+#define BG_GRAD_H_MIN 16
 
 // Everything on this layer eases toward a new level rather than stepping to it.
 // ZMK reports typing speed about once a second, so without this the effect

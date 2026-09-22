@@ -33,31 +33,38 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include "eyes_status.h"
 #include <fonts.h>
 
-#define EYES_W 220
-// Tall enough to carry a band of dialogue above the eyes as well as the eyes
-// themselves. Children are clipped to their parent's box, so this height is
-// what dialogue has to live inside - it was 120, which left the sleep z's
-// almost touching the ceiling.
+// The box is the whole panel: 320x172 on the ST7789P3 this screen now drives.
+// Children are clipped to their parent's box, so the box has to hold the
+// eyes, the dialogue and the z's between them, and the dialogue is
+// right-anchored to it - so its width is also what fixes how far from the
+// panel's right edge a remark starts.
 //
-// Grown symmetrically and the eyes are centred in it, so they do not move: the
-// box simply reaches further up and down around them. The lower half goes
-// unused, which costs nothing - the object is transparent and its children sit
-// where they are told.
-// 220 puts the top of the box exactly on the top of the screen: the widget is
-// centred with a 10px lift on a 240px-tall panel, so this is as much room above
-// the eyes as there is to have. Anything more would hang off the top and be
-// clipped by the screen rather than gaining anything.
-#define EYES_H 220
+// The eyes are centred in it, which on a box this size puts them at the
+// panel's vertical middle rather than in a lower band the way the 240px-tall
+// panel's box used to: that box was taller than its screen on purpose, to
+// carve out empty space above the eyes for the dialogue to live in. This one
+// is the screen exactly, and the dialogue lives beside the eyes instead - see
+// DIALOGUE_RIGHT.
+#define EYES_W 320
+#define EYES_H 172
 
-#define EYE_W 56
-#define EYE_H 76
-#define EYE_R 24
-// Each eye sits this far from centre, so the pair is 2x this apart. At 40 a
-// 56px-wide eye left only 24px between them, which read as crowded.
-#define EYE_DX 46
+// Scaled down from 56x76 for a panel 68px shorter. The face is still the one
+// thing on screen that is allowed to be large; these are the largest eyes
+// that leave the eyes' own reach clear of the battery row below and the top
+// edge above.
+#define EYE_W 46
+#define EYE_H 60
+#define EYE_R 19
+// Each eye sits this far from centre, so the pair is 2x this apart. Wider than
+// it needs to be for the gap alone: the panel gained 40px of width and the eyes
+// are narrower than they were, so without spreading them the face reads as a
+// small pair adrift in the middle of a wide screen.
+#define EYE_DX 52
 
 // Default stroke for line shapes. Expressions can override it via line_w.
-#define LINE_W 14
+// Scaled with the eyes - a 14px stroke on a 60px-tall eye closes up the detail
+// that tells one expression from another.
+#define LINE_W 11
 
 // lv_trigo_sin returns a sine scaled to this. Spelled out rather than using
 // LV_TRIGO_SIN_MAX so this doesn't depend on that macro's name.
@@ -93,8 +100,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define SACCADE_MS 120
 #define GLANCE_MIN_MS 1400
 #define GLANCE_MAX_MS 4200
-#define GAZE_X_MAX 14
-#define GAZE_Y_MAX 6
+#define GAZE_X_MAX 11
+#define GAZE_Y_MAX 5
 
 // ZMK's WPM is a rolling estimate and bounces, so each threshold releases
 // well below where it triggers.
@@ -121,9 +128,11 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // label so its background can hug its own text, and the author is better placed
 // than a wrap routine to decide where a remark should break.
 //
-// A line has 210px to work with before it runs past the widget and is clipped,
-// which is a little over twenty lowercase characters. Nothing warns about
-// overrunning it, so measure a long one rather than counting on the estimate.
+// A line has the width of the box - 320px now - less the margin it hangs from,
+// so about 300px, or a little under thirty lowercase characters. Nothing warns
+// about overrunning it, so measure a long one rather than counting on the
+// estimate. The existing lines were written for the 220px box this used to be
+// and still fit well inside the wider one.
 //
 // The font carries only "!", "." and "?" of punctuation. Anything else - a
 // comma, an apostrophe - renders as nothing at all, silently, so a line wanting
@@ -206,7 +215,12 @@ static const char *const DIALOGUE_NAG[] = {
 //
 // Anchored to the top right of the widget rather than at an offset from its
 // centre, so a longer line grows leftward into empty space instead of across
-// the eyes, and sits in the band above them either way.
+// the eyes. On the 320x172 panel that empty space is a real side column - the
+// eyes sit within about x=85..235, leaving the right third of the panel free
+// top to bottom - rather than only the band above the face the 240px-tall
+// panel had room for. A plate still crosses the eyes for a long line, and
+// still stays legible there: nothing about that changed, this only changes
+// where the block sits when it isn't crossing them.
 //
 // It is otherwise independent of the face. Dialogue is not an expression and
 // does not answer to one: an expression changing no longer clears it, and each
@@ -214,16 +228,18 @@ static const char *const DIALOGUE_NAG[] = {
 #define DIALOGUE_RIGHT 4
 
 // Dialogue grows upward from a fixed baseline: the last line always lands here
-// and earlier ones stack above it. A remark therefore expands into the empty
-// band over the eyes rather than down across them, and its final line sits in
-// the same place whether it is one line or two.
+// and earlier ones stack above it. Its final line sits in the same place
+// whether a remark is one line or two.
 //
-// The lowest value that still leaves room for two lines plus the drift on the
-// way out, given the box starts at the top of the screen. Tightening the line
-// pitch is what allowed this to come up from 62: two lines now need 44px rather
-// than 52, and the eight pixels that freed went straight into clearing the
-// eyes, which a plate used to overlap slightly.
-#define DIALOGUE_BOTTOM 54
+// Centred in the panel's height rather than pinned to the top: the eyes moved
+// from a 220px box that reached above the screen's own top edge to one that
+// is exactly the panel, so the tight clearance above them that used to size
+// this (54, chosen to just clear the eye top with the fade's rise folded in)
+// no longer applies - the whole 172px column is free, since a plate crossing
+// the eyes was always fine. Two lines plus the 10px rise need 54px; centring
+// that in 172 puts the top of the block at (172-54)/2, rounded to keep the
+// arithmetic simple.
+#define DIALOGUE_BOTTOM 100
 
 // Squeezing is an effort, so it pulses rather than sitting still. STRAIN_MIN
 // is how far shut it gets at the bottom of the pulse, out of OPEN_FULL - a
@@ -265,7 +281,7 @@ static const char *const DIALOGUE_NAG[] = {
 // Fast and wide enough to read as a cartoon sway. It was 7s and 2px, which
 // was a drift you had to look for.
 #define WOBBLE_MS 1400
-#define WOBBLE_PX 5
+#define WOBBLE_PX 4
 
 // ZMK only reports ACTIVE and IDLE here (ZMK_SLEEP is off), so the deeper
 // "actually asleep" stage is timed locally.
@@ -298,7 +314,7 @@ enum eye_shape {
 #define ANGRY_CUT_INNER_PCT 78
 
 // Unamused is neutral's lower half with a short tail off the top edge.
-#define LID_TAIL 14
+#define LID_TAIL 11
 
 // How much of neutral the downward-looking variation cuts off the top. Subtle
 // on purpose - just enough to flatten the top edge and read as a lowered lid.
@@ -315,9 +331,9 @@ enum eye_shape {
 #define QUIRK_SMALL_PCT 62
 
 // The quirks draw hollow, which is what separates them from the resting face
-// at a glance: same silhouette, no ink inside. 8px reads clearly as a ring at
+// at a glance: same silhouette, no ink inside. 6px reads clearly as a ring at
 // this size without closing up when a blink squashes it.
-#define QUIRK_OUTLINE_W 8
+#define QUIRK_OUTLINE_W 6
 
 // The small one breaks the pattern deliberately - a circle rather than
 // neutral's rounded rectangle, so it reads as the eyes going round rather than
@@ -327,7 +343,7 @@ enum eye_shape {
 
 // Height of the shut eye in a wink: a lid, not a squint. Its radius is
 // neutral's, which LVGL clamps to half of this, so it comes out a flat lozenge.
-#define WINK_SHUT_H 12
+#define WINK_SHUT_H 10
 
 // A sparkle punched clean through the eye: centred, filling nearly its whole
 // height and width, sides bowed inward. Radius follows cos(2t) to the fourth,
@@ -432,11 +448,11 @@ static const struct expression expressions[EXPR_COUNT] = {
     // Doesn't blink either: these eyes are shut too, and the strain pulse
     // already moves them, so a blink on top competes with it.
     [EXPR_SQUEEZED] = {SHAPE_CHEVRON_IN, EYE_W, EYE_H, 0, 0, 0, false, 0, 0, 0, false, 0, true},
-    [EXPR_SHOCK] = {SHAPE_BAR, 24, 24, 0, 0, 12, false},
+    [EXPR_SHOCK] = {SHAPE_BAR, 20, 20, 0, 0, 10, false},
     // Box height sets the bow: depth is h minus the stroke. Doesn't blink -
     // these eyes are already shut, so collapsing and reopening the arc reads
     // as a glitch rather than as a blink.
-    [EXPR_SLEEPY] = {SHAPE_ARC_DOWN, EYE_W, 30, 0, 12, 0, false, 0, 0, 0, false, 0, true},
+    [EXPR_SLEEPY] = {SHAPE_ARC_DOWN, EYE_W, 24, 0, 10, 0, false, 0, 0, 0, false, 0, true},
     // Neutral's own outline, cut. Their boxes are neutral's size plus whatever
     // the cut needs - the lid's tail, and nothing extra for angry. Unamused
     // spreads slightly, since the tail eats into the gap between the eyes.
@@ -444,19 +460,19 @@ static const struct expression expressions[EXPR_COUNT] = {
     // Both morph in a single frame. These are the layer expressions, so they
     // want to land the instant the key goes down; the default 200ms is fine
     // for a mood drifting in, but reads as lag when it is answering a keypress.
-    [EXPR_UNAMUSED] = {SHAPE_LIDDED, EYE_W + LID_TAIL, EYE_H / 2, 0, 0, 0, false, 9, 6, 0, true,
+    [EXPR_UNAMUSED] = {SHAPE_LIDDED, EYE_W + LID_TAIL, EYE_H / 2, 0, 0, 0, false, 7, 5, 0, true,
                        80},
-    // Lifted 14px, which is how far the cut leaves its ink below the centre of
+    // Lifted 11px, which is how far the cut leaves its ink below the centre of
     // a box still sized for the whole eye. Every other expression's ink is
     // centred on its box, so without this the scowl simply sits lower than the
     // rest of the vocabulary for no reason anyone chose.
-    [EXPR_ANGRY] = {SHAPE_ANGRY, EYE_W, EYE_H, 0, -14, 0, false, 9, 0, 0, true, 80},
+    [EXPR_ANGRY] = {SHAPE_ANGRY, EYE_W, EYE_H, 0, -11, 0, false, 7, 0, 0, true, 80},
     // Wider box means wider coil spacing, so the stroke goes up with it to
     // hold the reference's 1:1 stroke-to-gap.
-    // Deliberately excluded from the widening. EYE_DX + 6 puts these 52px from
-    // centre, exactly where they sat before it - at 86px per eye they were
-    // already far enough apart, and any wider reaches the case lip.
-    [EXPR_CONFUSED] = {SHAPE_SPIRAL, 86, 86, 0, 0, 0, false, 8, 6},
+    // Deliberately excluded from the widening. EYE_DX + 6 puts these 58px from
+    // centre, well outside a 46px eye - the spiral is its own silhouette and
+    // does not have to sit in the eye's box, only to be the same face.
+    [EXPR_CONFUSED] = {SHAPE_SPIRAL, 68, 68, 0, 0, 0, false, 6, 6},
 
     // Transient variations on the resting face, swapped in by the quirk timer.
     // Width, height and radius scale by the same factor, so these are neutral
@@ -485,7 +501,7 @@ static const struct expression expressions[EXPR_COUNT] = {
     // sampled about twice: the plain quirks survive that because a growing
     // rounded rectangle reads fine half-drawn, but a half-formed sparkle just
     // looks like it arrived late.
-    [EXPR_TWINKLE] = {SHAPE_TWINKLE, EYE_W, EYE_H, 0, 0, 0, false, 9, 0, 0, true, 80},
+    [EXPR_TWINKLE] = {SHAPE_TWINKLE, EYE_W, EYE_H, 0, 0, 0, false, 7, 0, 0, true, 80},
     // Neutral narrowed, as though focusing on something far off. Full width and
     // neutral's radius, which LVGL clamps to half the reduced height, so it
     // ends up a flattened pill rather than a squashed rounded rectangle.
