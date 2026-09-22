@@ -13,14 +13,18 @@ active layer, strain as your typing speed climbs, and doze off when you stop; sh
 dialogue appear beside them; a background layer carries whatever the moment calls for. The
 readouts are still there, just smaller and around the edges.
 
-Underneath it is a Zephyr module for an ST7789V panel on a Seeed XIAO nRF52840 or a nice!nano v2,
-drawn with LVGL, tracking ZMK `main` on Zephyr 4.1.
+Underneath it is a Zephyr module for an ST7789P3 172×320 panel on a nice!nano v2, drawn with LVGL,
+tracking ZMK `main` on Zephyr 4.1.
+
+> The photographs and the rest of the geometry were taken on the 240×280 panel this screen used to
+> drive, before it was re-pointed at the wider one. The face itself is unchanged — it is the band
+> heights and the readouts around it that moved.
 
 It is built on [janpfischer](https://github.com/janpfischer)'s
-[YADS](https://github.com/janpfischer/zmk-dongle-screen) — the shield, the display driver glue,
-the brightness and ambient light handling and most of the widgets are theirs. The eyes, the
-dialogue and the background were added here, and the output and battery widgets reworked to make
-room. See [Credits](#credits).
+[YADS](https://github.com/janpfischer/zmk-dongle-screen) — the shield, the display driver approach,
+the brightness and ambient light handling and most of the widgets are theirs, and the eyes,
+dialogue and background were added here. The ST7789P3 driver, its devicetree binding and the
+nice!nano wiring come from the author's own pacman module. See [Credits](#credits).
 
 > One thing to know before you write any dialogue: the bundled text font carries **no uppercase**,
 > and a capital renders as nothing at all rather than failing loudly. See
@@ -98,10 +102,10 @@ them to atmosphere, and a layer can have one without the other. Both are set in 
 
 Everything the face is not — the status readouts, around the edges.
 
-> **The layer, mod and WPM widgets are not placed for the face.** All three land where something
-> now draws: layer dead centre underneath the eyes, mod across their lower edge, WPM in the band
-> dialogue writes across. Turn them off when running the face, or move them. They are not broken,
-> just positioned for a screen that no longer looks like this.
+> **The layer, mod and WPM widgets are not placed for the face.** Layer lands dead centre
+> underneath the eyes, mod immediately below them, and WPM in the top-left corner, in the band the
+> dialogue writes across for a long remark. Turn them off when running the face, or move them. They
+> are not broken, just positioned for a screen that no longer looks like this.
 
 - **Output** — the live transport only, on one line and in lower case. Drawing the inactive one
   told you nothing you could not infer and cost a whole row.
@@ -128,18 +132,24 @@ Everything the face is not — the status readouts, around the edges.
   Bind them in your keymap; all three keycodes are configurable.
 - **Idle timeout** — the panel dims to nothing after a stretch without keystrokes and returns on the
   next one. `0` never dims.
-- **Orientation** — horizontal or vertical, and flipped either way to match how the panel sits in
-  its case.
+- **Orientation** — set in devicetree, not Kconfig: the panel is landscape by `madctl` in its
+  overlay, and the alternatives for a panel mounted the other way round are commented there.
 - **Custom status screen** — the widgets are assembled in `custom_status_screen.c`. Rearranging them
   means editing that file and rebuilding.
 
 ## Hardware
 
-There is no build guide here — this repository is a module and nothing else. For the dongle itself,
-use **carrefinho**'s [Prospector](https://github.com/carrefinho/prospector) guide, built around the
-Seeed Studio XIAO nRF52840.
+There is no build guide here — this repository is a module and nothing else. For the dongle hardware,
+use **carrefinho**'s [Prospector](https://github.com/carrefinho/prospector) guide.
 
-nice!nano v2 works too: [wiring guide](/docs/nice_nano_wire_guide.md).
+The panel is an **ST7789P3, 172×320**, wired for a nice!nano v2:
+[wiring guide](/docs/nice_nano_wire_guide.md). The module ships an overlay for that board only — a
+different dongle board needs its own overlay, mapping the same pins as the wiring guide describes.
+
+> **Prospector's case is cut for a 240×280 panel.** The ST7789P3 this module now drives is
+> 172×320 — wider and shorter, not just a different resolution on the same shape of glass — so
+> the case and its display cutout have not been re-fitted to it yet. Screen geometry (this README,
+> the layer mapping, the face itself) is current; the physical case is not.
 
 ## Installation
 
@@ -194,7 +204,7 @@ this builds", which is how a working config broke without being touched: ZMK was
 
    ```yaml
    include:
-     - board: xiao_ble//zmk
+     - board: nice_nano@2.0.0//zmk
        shield: [YOUR_CONFIGURED_DONGLE] dongle_screen
        #cmake-args: -DCONFIG_LOG_PROCESS_THREAD_STARTUP_DELAY_MS=8000 #optional if logging is enabled
        #snippet: zmk-usb-logging #only enable for debugging
@@ -206,11 +216,11 @@ this builds", which is how a working config broke without being touched: ZMK was
 
    ```yaml
    include:
-     - board: xiao_ble//zmk
+     - board: nice_nano@2.0.0//zmk
        shield: split_left
        cmake-args: -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n
        artifact-name: split-dongle-left
-     - board: xiao_ble//zmk
+     - board: nice_nano@2.0.0//zmk
        shield: split_right
        cmake-args: -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n
        artifact-name: split-dongle-right
@@ -220,24 +230,24 @@ this builds", which is how a working config broke without being touched: ZMK was
 
 ### Configuration sample
 
-A sample `build.yaml` based on `xiao_ble//zmk` boards for the keyboard and the dongle including a `settings_reset` firmware could look like this:
+A sample `build.yaml` based on `nice_nano@2.0.0//zmk` boards for the keyboard and the dongle including a `settings_reset` firmware could look like this:
 
 ```yaml
 include:
-  - board: xiao_ble//zmk
+  - board: nice_nano@2.0.0//zmk
     shield: totem_left
     cmake-args: -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n
     artifact-name: totem-dongle-left
-  - board: xiao_ble//zmk
+  - board: nice_nano@2.0.0//zmk
     shield: totem_right
     cmake-args: -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n
     artifact-name: totem-dongle-right
-  - board: xiao_ble//zmk
+  - board: nice_nano@2.0.0//zmk
     shield: totem_dongle dongle_screen
     cmake-args: -DCONFIG_LOG_PROCESS_THREAD_STARTUP_DELAY_MS=8000
     snippet: zmk-usb-logging
     artifact-name: totem-dongle-screen
-  - board: xiao_ble//zmk
+  - board: nice_nano@2.0.0//zmk
     shield: settings_reset
     artifact-name: totem-settings-reset
 ```
@@ -310,17 +320,20 @@ what sells it — but neither needs the other.
 timings, thresholds, sizes and colours. The dialogue lines are three lists in `eyes_status.c`. The
 layer mapping is the exception and lives in Kconfig, above.
 
-One constraint worth knowing before writing dialogue: a line has about 210px, a little over twenty
-lowercase characters, before it is clipped. Punctuation is fine, but the font has **no uppercase** —
-a capital renders as nothing at all, silently. See [Licensing](#licensing) to widen it.
+One constraint worth knowing before writing dialogue: a line has the width of the eyes' box less the
+margin it hangs from — about 300px on the 320px-wide panel, a little under thirty lowercase
+characters — before it is clipped. Punctuation is fine, but the font has **no uppercase** — a
+capital renders as nothing at all, silently. See [Licensing](#licensing) to widen it.
+
+A remark is two lines at most, and those two have to fit between the top of the panel and the top of
+the eyes: about 54px, which two lines of the 20px font fill exactly. Nothing on screen tells you when
+a line has outgrown either limit, so measure a long one rather than counting on the estimate.
 
 
 ### Configuration options
 
 | Name                                                           | Type | Default                        | Description                                                                                                                                                                                                                                  |
 | -------------------------------------------------------------- | ---- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CONFIG_DONGLE_SCREEN_HORIZONTAL`                              | bool | y                              | Orientation of the screen. By default, it is horizontal (laying on the side).                                                                                                                                                                |
-| `CONFIG_DONGLE_SCREEN_FLIPPED`                                 | bool | n                              | Should the screen orientation be flipped in horizontal or vertical orientation?                                                                                                                                                              |
 | `CONFIG_DONGLE_SCREEN_SYSTEM_ICON`                             | int  | 0                              | The icon to display when the 'LGUI'/'RGUI' is pressed. (0: macOS, 1: Linux, 2: Windows)                                                                                                                                                      |
 | `CONFIG_DONGLE_SCREEN_AMBIENT_LIGHT`                           | bool | n                              | If enabled, the ambient light sensor will be used to automatically adjust screen brightness.                                                                                                                                                 |
 | `CONFIG_DONGLE_SCREEN_AMBIENT_LIGHT_EVALUATION_INTERVAL_MS`    | int  | 1000                           | The interval how often the ambient light level should be evaluated.                                                                                                                                                                          |
@@ -350,8 +363,6 @@ a capital renders as nothing at all, silently. See [Licensing](#licensing) to wi
 ### Example configuration (`prj.conf`)
 
 ```conf
-CONFIG_DONGLE_SCREEN_HORIZONTAL=y
-CONFIG_DONGLE_SCREEN_FLIPPED=n
 CONFIG_DONGLE_SCREEN_AMBIENT_LIGHT=y
 CONFIG_DONGLE_SCREEN_IDLE_TIMEOUT_S=300
 CONFIG_DONGLE_SCREEN_MAX_BRIGHTNESS=90
@@ -390,7 +401,7 @@ To achieve this, an appropriate configuration for the specific microcontroller m
 ```yaml
   include:
 ...
-  - board: xiao_ble//zmk
+  - board: nice_nano@2.0.0//zmk
     shield: settings_reset
 
   - board: nice_nano@2.0.0//zmk
@@ -408,7 +419,7 @@ Refer to the [ZMK Local toolchain](https://zmk.dev/docs/development/local-toolch
 A command for building locally _can_ look something like this:
 
 ```
-west build -p -s /workspaces/zmk/app -d "/workspaces/zmk-build-output/totem_dongle" -b "xiao_ble//zmk" -S zmk-usb-logging -- -DZMK_CONFIG=/workspaces/zmk-config/config -DSHIELD="totem_dongle dongle_screen" -DZMK_EXTRA_MODULES=/workspaces/zmk-modules/zmk-dongle-screen/
+west build -p -s /workspaces/zmk/app -d "/workspaces/zmk-build-output/totem_dongle" -b "nice_nano@2.0.0//zmk" -S zmk-usb-logging -- -DZMK_CONFIG=/workspaces/zmk-config/config -DSHIELD="totem_dongle dongle_screen" -DZMK_EXTRA_MODULES=/workspaces/zmk-modules/zmk-dongle-screen/
 ```
 
 _Note: a matching entry for `-DSHIELD` must already be present in your `build.yaml` in your configuration, which is given as the `-DZMK_CONFIG` argument._
@@ -419,9 +430,13 @@ Almost none of the hard part is ours. What was added here is a face; what makes 
 for it to live on is other people's work.
 
 - **[janpfischer](https://github.com/janpfischer)** — [YADS](https://github.com/janpfischer/zmk-dongle-screen),
-  which this is built on. The shield, the ST7789V driver glue, the brightness and ambient light handling,
-  the idle and toggle behaviour, and the output, layer, mod, WPM and battery widgets. The eyes were
-  dropped into a module that already worked; everything holding them up is theirs.
+  which this is built on. The shield, the display bring-up and its devicetree plumbing, the
+  brightness and ambient light handling, the idle and toggle behaviour, and the output, layer, mod,
+  WPM and battery widgets. The eyes were dropped into a module that already worked; everything
+  holding them up is theirs.
+- **[joaopedropio](https://github.com/joaopedropio)** — the snake module the pacman module was
+  built from, which is where this screen's ST7789P3 driver, its devicetree binding and the
+  nice!nano wiring trace back to.
 - **[carrefinho](https://github.com/carrefinho)** — [Prospector](https://github.com/carrefinho/prospector)
   and [prospector-zmk-module](https://github.com/carrefinho/prospector-zmk-module). The dongle this
   runs on, the case, and the build guide that gets people to working hardware in the first place —

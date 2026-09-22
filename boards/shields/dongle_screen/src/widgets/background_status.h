@@ -21,8 +21,9 @@
 
 // Vertical strokes hanging from the top of the panel, which fill in as typing
 // speed climbs. Enough to read as a wall of them at full intensity without
-// turning the top of the screen solid.
-#define BG_STRESS_LINES 16
+// turning the top of the screen solid. Two more than the 280px-wide panel
+// carried, since the strokes are spread across the width.
+#define BG_STRESS_LINES 18
 
 // The popping-vein mark that hangs in the air around an angry character.
 //

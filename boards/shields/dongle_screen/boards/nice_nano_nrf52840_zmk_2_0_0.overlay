@@ -1,3 +1,21 @@
+/*
+ * nice!nano v2 wiring for the ST7789P3 172x320 panel.
+ *
+ * Display pins, and the panel's own tuning, come from the wiring that has been
+ * run on this hardware. The backlight is this module's own: it is a PWM LED
+ * rather than a plain GPIO, because brightness.c dims it.
+ *
+ * The display runs on spi3, not the spi0 zmk-pacman-module's own overlay uses.
+ * spi0 and i2c0 are the same physical peripheral block on the nRF52840
+ * (both sit at 0x40003000 - see nrf52840.dtsi) - fine for that module, which
+ * has no i2c0 node of its own, but this one also wires up the ambient light
+ * sensor on i2c0 below, and the two cannot both be "okay" at once. spi3 is a
+ * dedicated SPI-only block with nothing to collide with, which is why the
+ * ST7789V wiring this replaced used it too. GPIO pin choice is unaffected by
+ * which peripheral instance they're wired through, so the pin numbers below
+ * are unchanged from the ones spi0 used.
+ */
+
 / {
    pwmleds {
       compatible = "pwm-leds";
@@ -13,21 +31,19 @@
 
 &pinctrl {
    spi3_default: spi3_default {
-		group1 {
-			psels = <NRF_PSEL(SPIM_SCK, 1, 13)>,
-				<NRF_PSEL(SPIM_MOSI, 1, 15)>,
-				<NRF_PSEL(SPIM_MISO, 1, 11)>;
-		};
-	};
+      group1 {
+         psels = <NRF_PSEL(SPIM_MOSI, 1, 1)>,
+                 <NRF_PSEL(SPIM_SCK, 1, 6)>;
+      };
+   };
 
-	spi3_sleep: spi3_sleep {
-		group1 {
-			psels = <NRF_PSEL(SPIM_SCK, 1, 13)>,
-				<NRF_PSEL(SPIM_MOSI, 1, 15)>,
-				<NRF_PSEL(SPIM_MISO, 1, 11)>;
-			low-power-enable;
-		};
-	};
+   spi3_sleep: spi3_sleep {
+      group1 {
+         psels = <NRF_PSEL(SPIM_MOSI, 1, 1)>,
+                 <NRF_PSEL(SPIM_SCK, 1, 6)>;
+         low-power-enable;
+      };
+   };
 
    pwm1_default: pwm1_default {
       group1 {
@@ -44,54 +60,59 @@
    };
 };
 
-
-disp_spi: &spi3 {
+&spi3 {
+   compatible = "nordic,nrf-spim";
    status = "okay";
    pinctrl-0 = <&spi3_default>;
-	pinctrl-1 = <&spi3_sleep>;
-	pinctrl-names = "default", "sleep";
-   cs-gpios = <&gpio1 6 GPIO_ACTIVE_LOW>;
-};
+   pinctrl-1 = <&spi3_sleep>;
+   pinctrl-names = "default", "sleep";
+   cs-gpios = <&gpio0 9 GPIO_ACTIVE_LOW>;
 
-/ {
-   mipi_dbi {
-      compatible = "zephyr,mipi-dbi-spi";
-      spi-dev = <&spi3>;
-      dc-gpios = <&gpio1 4 GPIO_ACTIVE_HIGH>;
-      reset-gpios = <&gpio0 11 GPIO_ACTIVE_LOW>;
-      write-only;
-      #address-cells = <1>;
-      #size-cells = <0>;
-   
-      st7789: st7789v@0 {
-         compatible = "sitronix,st7789v";
-         mipi-max-frequency = <30000000>;
-         mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
-         reg = <0>;
-         width = <240>;
-         height = <280>;
-         x-offset = <0>;
-         y-offset = <20>;
-         vcom = <0x19>;
-         gctrl = <0x35>;
-         vrhs = <0x12>;
-         vdvs = <0x20>;
-         mdac = <0x00>;
-         gamma = <0x01>;
-         colmod = <0x05>;
-         lcm = <0x2c>;
-         porch-param = [ 0c 0c 00 33 33  ];
-         cmd2en-param = [ 5a 69 02 01  ];
-         pwctrl1-param = [ a4 a1  ];
-         pvgam-param = [ D0 04 0D 11 13 2B 3F 54 4C 18 0D 0B 1F 23  ];
-         nvgam-param = [ D0 04 0C 11 13 2C 3F 44 51 2F 1F 1F 20 23  ];
-         ram-param = [ 00 F0  ];
-         rgb-param = [ CD 08 14  ];
-      };
+   st7789p3: st7789p3@0 {
+      compatible = "sitronix,st7789p3";
+      reg = <0>;
+      /* SPIM3 can run faster than this - up to 32 MHz - but 8 MHz is the
+       * speed zmk-pacman-module actually validated this panel at, and
+       * nothing here has been tested on hardware yet. Raise it once someone
+       * has a unit to check the picture still comes out clean. */
+      spi-max-frequency = <8000000>;
+      width = <320>;
+      height = <172>;
+      /* MV|MX for landscape. If the image comes out mirrored or upside-down
+       * on a given panel, try 0xA0 (MV|MY) or 0xE0 (MV|MX|MY) instead - this
+       * is a property of how the glass is mounted, so it cannot be assumed. */
+      madctl = <0x60>;
+      colmod = <0x55>;
+      x-offset = <0>;
+      y-offset = <34>;
+      inversion;
+      reset-gpios = <&gpio1 2 GPIO_ACTIVE_LOW>;
+      dc-gpios = <&gpio1 7 GPIO_ACTIVE_HIGH>;
    };
 };
 
+&uicr {
+   /* CS is on P0.09, which defaults to the NFC antenna on nRF52840 and will
+    * not drive as GPIO until it is released. This covers the backlight on
+    * P0.10 as well, the other NFC pin. */
+   nfct-pins-as-gpios;
+};
+
+&pwm1 {
+  status = "okay";
+  pinctrl-0 = <&pwm1_default>;
+  pinctrl-1 = <&pwm1_sleep>;
+  pinctrl-names = "default", "sleep";
+};
+
 &i2c0 {
+   /* Carried over unchanged from the ST7789V wiring: this is the ambient
+    * light sensor CONFIG_DONGLE_SCREEN_AMBIENT_LIGHT depends on, and it has
+    * nothing to do with the panel - only the display pins changed with the
+    * swap to the ST7789P3. Uses nice!nano v2's default i2c0 pins, which
+    * don't collide with any of the SPI3/PWM1 pins above - unlike spi0, which
+    * is why the display is on spi3 and not spi0. See the file header.
+    */
    status = "okay";
 
    apds9960: apds9960@39 {
@@ -100,11 +121,4 @@ disp_spi: &spi3 {
        reg = <0x39>;
        int-gpios = <&gpio1 0 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
    };
-};
-
-&pwm1 {
-  status = "okay";
-  pinctrl-0 = <&pwm1_default>;
-  pinctrl-1 = <&pwm1_sleep>;
-  pinctrl-names = "default", "sleep";
 };

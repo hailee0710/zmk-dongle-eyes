@@ -1,0 +1,42 @@
+# Copyright (c) 2024
+# SPDX-License-Identifier: MIT
+
+description: ST7789P3 320x172 display via SPI
+
+compatible: "sitronix,st7789p3"
+
+include: [spi-device.yaml]
+
+properties:
+  width:
+    type: int
+    default: 320
+  height:
+    type: int
+    default: 172
+  # Panel orientation lives here rather than in Kconfig: this driver takes the
+  # rotation from the controller's own MADCTL register, so flipping the screen
+  # is a devicetree edit, not a rebuild of the widget code.
+  madctl:
+    type: int
+    default: 0x20
+  colmod:
+    type: int
+    default: 0x55
+  inversion:
+    type: boolean
+  x-offset:
+    type: int
+    default: 0
+  y-offset:
+    type: int
+    default: 0
+  reset-gpios:
+    type: phandle-array
+    required: true
+  dc-gpios:
+    type: phandle-array
+    required: true
+  bl-gpios:
+    type: phandle-array
+    required: false
