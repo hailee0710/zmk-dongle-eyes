@@ -17,6 +17,12 @@ if(CONFIG_SHIELD_DONGLE_SCREEN)
   zephyr_library_sources(src/widgets/mod_status.c)
   zephyr_library_sources_ifdef(CONFIG_DONGLE_SCREEN_EYES_ACTIVE src/widgets/eyes_status.c)
   zephyr_library_sources_ifdef(CONFIG_DONGLE_SCREEN_BACKGROUND_ACTIVE src/widgets/background_status.c)
+  # Raw-framebuffer engine the eyes widget draws its shapes into (see
+  # helpers/display.h) - background_status.c stayed on real LVGL objects
+  # throughout the v0.3 framebuffer port and never called into this, so it
+  # rides the same Kconfig option as eyes_status.c rather than being built
+  # unconditionally.
+  zephyr_library_sources_ifdef(CONFIG_DONGLE_SCREEN_EYES_ACTIVE src/widgets/helpers/display.c)
   file(GLOB font_sources src/fonts/*.c)
   zephyr_library_sources(${font_sources})
 endif()

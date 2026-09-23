@@ -20,16 +20,18 @@
 // is accounted for. A third would start off the top of the screen.
 #define DIALOGUE_MAX_LINES 2
 
-// Each eye owns both a bar and a line object. Expressions swap which one is
-// visible rather than creating and deleting objects on the display thread.
+// The eyes themselves are drawn into the shared raw framebuffer (see
+// helpers/display.h), not built from lv_obj/lv_line/lv_canvas objects - only
+// `fb_img`, the one image object that displays that buffer, lives here.
+// Dialogue and the sleep z's stay real LVGL labels, since that API doesn't
+// need porting and drawing text into the framebuffer would mean giving up
+// this shield's own fonts for pacman's bitmap one (see CLAUDE.md's "The ZMK
+// v0.3 framebuffer port").
 struct zmk_widget_eyes_status {
     sys_snode_t node;
     lv_obj_t *obj;
-    lv_obj_t *bar[2];
-    lv_obj_t *line[2];
-    lv_obj_t *hole[2]; // black outline for the twinkle's cut-out sparkle
-    lv_obj_t *fill[2];  // canvas under the outline, for shapes drawn solid
-    lv_point_precise_t pts[2][EYE_MAX_PTS];
+    lv_obj_t *fb_img;
+    lv_point_t pts[2][EYE_MAX_PTS];
     lv_obj_t *zzz[3];  // drift up and fade once idle has gone on a while
     // One label per line rather than one label with newlines in it, so each
     // line's background hugs its own text like a highlight instead of every
@@ -47,6 +49,18 @@ struct zmk_widget_eyes_status {
     int16_t gaze_x;
     int16_t gaze_y;
     bool idle;
+
+    // Set by the per-tick animation callbacks (openness/strain/spin/wob/
+    // shake/gaze), cleared by eyes_status.c's own redraw timer once it has
+    // actually redrawn - see EYES_REDRAW_MS. LVGL's animation system steps
+    // every ~10ms, far faster than the panel is ever sampled (BLINK_CLOSE_MS
+    // etc put that at 80ms), so calling apply_geometry() straight from each
+    // callback redrew the same frame eight times over for one that was ever
+    // shown, and doing it from as many as two independent animations at once
+    // (confused's spin+wob, squeezed's strain+shake) doubled that again. The
+    // redraw timer coalesces however many of those landed since its last
+    // tick into the one redraw that actually mattered.
+    bool geom_dirty;
 };
 
 int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t *parent);

@@ -45,7 +45,7 @@ struct zmk_widget_background {
     lv_obj_t *obj;
 
     lv_obj_t *sparkle[BG_SPARKLES];
-    lv_point_precise_t pts[BG_SPARKLES][BG_SPARKLE_PTS];
+    lv_point_t pts[BG_SPARKLES][BG_SPARKLE_PTS];
 
     // A wash behind the strokes, so they read as falling out of something
     // rather than floating on black.
@@ -53,10 +53,10 @@ struct zmk_widget_background {
     lv_obj_t *stress[BG_STRESS_LINES];
 
     lv_obj_t *anger[BG_ANGER_MARKS][BG_ANGER_ARCS];
-    lv_point_precise_t anger_pts[BG_ANGER_MARKS][BG_ANGER_ARCS][BG_ANGER_ARC_PTS];
+    lv_point_t anger_pts[BG_ANGER_MARKS][BG_ANGER_ARCS][BG_ANGER_ARC_PTS];
 
     lv_obj_t *symbol[BG_SYMBOLS];
-    lv_point_precise_t stress_pts[BG_STRESS_LINES][2];
+    lv_point_t stress_pts[BG_STRESS_LINES][2];
     // Per-line share of the full opacity, so they do not all come up together
     // like a comb.
     uint8_t stress_weight[BG_STRESS_LINES];

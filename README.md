@@ -14,7 +14,10 @@ dialogue appear beside them; a background layer carries whatever the moment call
 readouts are still there, just smaller and around the edges.
 
 Underneath it is a Zephyr module for an ST7789P3 172×320 panel on a nice!nano v2, drawn with LVGL,
-tracking ZMK `main` on Zephyr 4.1.
+tracking ZMK `v0.3` on Zephyr `v3.5.0+zmk-fixes` — pinned there for stability rather than riding
+`main`, since the eyes now draw into their own small raw-pixel buffer rather than through LVGL's
+object API, precisely so this doesn't have to chase `main`'s LVGL version. See CLAUDE.md's "The ZMK
+v0.3 framebuffer port" for the detail.
 
 > The photographs and the rest of the geometry were taken on the 240×280 panel this screen used to
 > drive, before it was re-pointed at the wider one. The face itself is unchanged — it is the band
@@ -127,7 +130,11 @@ Everything the face is not — the status readouts, around the edges.
 ## Screen behaviour
 
 - **Ambient light** — with an `Adafruit APDS9960` wired up, the panel tracks the light in the room.
-  Off by default. The brightness keys still apply a modifier on top of whatever it chooses.
+  Off by default. The brightness keys still apply a modifier on top of whatever it chooses. The
+  `nice_nano_v2` overlay ships with the sensor's devicetree node disabled (a RAM saving, not a
+  hardware one - see CLAUDE.md's "The ZMK v0.3 framebuffer port"), so enabling
+  `CONFIG_DONGLE_SCREEN_AMBIENT_LIGHT` needs that node re-enabled in your own overlay first, or the
+  option stays unavailable.
 - **Brightness and toggle keys** — F23 and F24 step the brightness, F22 turns the panel off and on.
   Bind them in your keymap; all three keycodes are configurable.
 - **Idle timeout** — the panel dims to nothing after a stretch without keystrokes and returns on the
@@ -159,12 +166,14 @@ different dongle board needs its own overlay, mapping the same pins as the wirin
 > way.
 
 **ZMK version compatibility**
-This tracks ZMK `main`, which is on Zephyr 4.1 and LVGL 9. YADS's own `main` is still on LVGL 8 and
-will not build against it, which is why this line of work started from their `upgrade-4.1`.
+This tracks ZMK `v0.3` (Zephyr `v3.5.0+zmk-fixes`, LVGL 8.3), pinned to that tag rather than `main` -
+`main` moving to Zephyr 4.1 renamed every board once already, which is exactly the kind of break
+pinning to a tag avoids. Boards on `v0.3` use the plain pre-Hardware-Model-v2 name (`nice_nano_v2`,
+not `nice_nano@2.0.0//zmk`, which is `main`-only syntax) - every example below uses it.
 
-Pin every project to a commit rather than a branch. A branch means "whatever is at the tip when
-this builds", which is how a working config broke without being touched: ZMK was on `main` when
-`main` moved to Zephyr 4.1 and renamed every board.
+Pin every project to a tag or commit rather than a branch. A branch means "whatever is at the tip
+when this builds", which is how a working config broke without being touched before: ZMK was on
+`main` when `main` moved to Zephyr 4.1 and renamed every board.
 
 1. This guide assumes that you have already implemented a basic dongle setup as described [here](https://zmk.dev/docs/development/hardware-integration/dongle).
 2. Once this is done, add this repository to your `west.yaml`.  
@@ -180,7 +189,7 @@ this builds", which is how a working config broke without being touched: ZMK was
      projects:
        - name: zmk
          remote: zmkfirmware
-         revision: <a commit on main>
+         revision: v0.3
          import: app/west.yml
        - name: zmk-dongle-screen
          remote: rayreside
@@ -204,7 +213,7 @@ this builds", which is how a working config broke without being touched: ZMK was
 
    ```yaml
    include:
-     - board: nice_nano@2.0.0//zmk
+     - board: nice_nano_v2
        shield: [YOUR_CONFIGURED_DONGLE] dongle_screen
        #cmake-args: -DCONFIG_LOG_PROCESS_THREAD_STARTUP_DELAY_MS=8000 #optional if logging is enabled
        #snippet: zmk-usb-logging #only enable for debugging
@@ -216,11 +225,11 @@ this builds", which is how a working config broke without being touched: ZMK was
 
    ```yaml
    include:
-     - board: nice_nano@2.0.0//zmk
+     - board: nice_nano_v2
        shield: split_left
        cmake-args: -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n
        artifact-name: split-dongle-left
-     - board: nice_nano@2.0.0//zmk
+     - board: nice_nano_v2
        shield: split_right
        cmake-args: -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n
        artifact-name: split-dongle-right
@@ -230,24 +239,24 @@ this builds", which is how a working config broke without being touched: ZMK was
 
 ### Configuration sample
 
-A sample `build.yaml` based on `nice_nano@2.0.0//zmk` boards for the keyboard and the dongle including a `settings_reset` firmware could look like this:
+A sample `build.yaml` based on `nice_nano_v2` boards for the keyboard and the dongle including a `settings_reset` firmware could look like this:
 
 ```yaml
 include:
-  - board: nice_nano@2.0.0//zmk
+  - board: nice_nano_v2
     shield: totem_left
     cmake-args: -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n
     artifact-name: totem-dongle-left
-  - board: nice_nano@2.0.0//zmk
+  - board: nice_nano_v2
     shield: totem_right
     cmake-args: -DCONFIG_ZMK_SPLIT=y -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n
     artifact-name: totem-dongle-right
-  - board: nice_nano@2.0.0//zmk
+  - board: nice_nano_v2
     shield: totem_dongle dongle_screen
     cmake-args: -DCONFIG_LOG_PROCESS_THREAD_STARTUP_DELAY_MS=8000
     snippet: zmk-usb-logging
     artifact-name: totem-dongle-screen
-  - board: nice_nano@2.0.0//zmk
+  - board: nice_nano_v2
     shield: settings_reset
     artifact-name: totem-settings-reset
 ```
@@ -401,10 +410,10 @@ To achieve this, an appropriate configuration for the specific microcontroller m
 ```yaml
   include:
 ...
-  - board: nice_nano@2.0.0//zmk
+  - board: nice_nano_v2
     shield: settings_reset
 
-  - board: nice_nano@2.0.0//zmk
+  - board: nice_nano_v2
     shield: settings_reset
 ...
 ```
@@ -419,7 +428,7 @@ Refer to the [ZMK Local toolchain](https://zmk.dev/docs/development/local-toolch
 A command for building locally _can_ look something like this:
 
 ```
-west build -p -s /workspaces/zmk/app -d "/workspaces/zmk-build-output/totem_dongle" -b "nice_nano@2.0.0//zmk" -S zmk-usb-logging -- -DZMK_CONFIG=/workspaces/zmk-config/config -DSHIELD="totem_dongle dongle_screen" -DZMK_EXTRA_MODULES=/workspaces/zmk-modules/zmk-dongle-screen/
+west build -p -s /workspaces/zmk/app -d "/workspaces/zmk-build-output/totem_dongle" -b "nice_nano_v2" -S zmk-usb-logging -- -DZMK_CONFIG=/workspaces/zmk-config/config -DSHIELD="totem_dongle dongle_screen" -DZMK_EXTRA_MODULES=/workspaces/zmk-modules/zmk-dongle-screen/
 ```
 
 _Note: a matching entry for `-DSHIELD` must already be present in your `build.yaml` in your configuration, which is given as the `-DZMK_CONFIG` argument._

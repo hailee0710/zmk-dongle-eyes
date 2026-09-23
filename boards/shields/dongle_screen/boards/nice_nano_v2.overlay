@@ -106,18 +106,31 @@
 };
 
 &i2c0 {
-   /* Carried over unchanged from the ST7789V wiring: this is the ambient
-    * light sensor CONFIG_DONGLE_SCREEN_AMBIENT_LIGHT depends on, and it has
-    * nothing to do with the panel - only the display pins changed with the
-    * swap to the ST7789P3. Uses nice!nano v2's default i2c0 pins, which
-    * don't collide with any of the SPI3/PWM1 pins above - unlike spi0, which
-    * is why the display is on spi3 and not spi0. See the file header.
+   /* Disabled for the ZMK v0.3 pin: a first framebuffer-port spike with this
+    * node enabled (and CONFIG_DONGLE_SCREEN_AMBIENT_LIGHT left at its
+    * default off) still overflowed RAM, because Zephyr's I2C peripheral
+    * driver reserves its own buffers/state for any "okay" i2c0 node
+    * regardless of whether the ambient-light Kconfig feature that uses it
+    * is on - the RAM cost was never conditional on the feature, only on the
+    * devicetree node. With a 320x172 framebuffer alone already 24,504 bytes
+    * over budget (see CLAUDE.md's "The ZMK v0.3 framebuffer port"), this was
+    * the next thing to cut rather than shrink further. Carried over from
+    * the ST7789V wiring otherwise unchanged - this has nothing to do with
+    * the panel, only with the RAM budget on this pin.
+    *
+    * CONFIG_DONGLE_SCREEN_AMBIENT_LIGHT itself depends on this node's own
+    * status (Kconfig.defconfig), so leaving it disabled here can no longer
+    * produce a build that silently fails to link - it just makes that
+    * option unavailable, same as any other Kconfig option gated on hardware
+    * that isn't there. Re-enable once there's enough headroom to re-measure
+    * against and the ambient-light feature is actually wanted - Kconfig.defconfig's
+    * own LV_Z_VDB_SIZE comment has the current numbers.
     */
-   status = "okay";
+   status = "disabled";
 
    apds9960: apds9960@39 {
        compatible = "avago,apds9960";
-       status = "okay";
+       status = "disabled";
        reg = <0x39>;
        int-gpios = <&gpio1 0 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
    };

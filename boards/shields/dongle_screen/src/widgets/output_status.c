@@ -23,8 +23,6 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 
-lv_point_t selection_line_points[] = {{0, 0}, {13, 0}}; // will be replaced with lv_point_precise_t
-
 struct output_status_state
 {
     struct zmk_endpoint_instance selected_endpoint;
@@ -37,7 +35,11 @@ struct output_status_state
 static struct output_status_state get_state(const zmk_event_t *_eh)
 {
     return (struct output_status_state){
-        .selected_endpoint = zmk_endpoint_get_selected(),                  // 0 = USB , 1 = BLE
+        // zmk_endpoints_selected() on ZMK v0.3 - renamed to
+        // zmk_endpoint_get_selected() on main after this shield's LVGL9 port
+        // was written; the returned struct zmk_endpoint_instance is
+        // unchanged, so the caller needs no other change.
+        .selected_endpoint = zmk_endpoints_selected(),                     // 0 = USB , 1 = BLE
         .active_profile_index = zmk_ble_active_profile_index(),            // 0-3 BLE profiles
         .active_profile_connected = zmk_ble_active_profile_is_connected(), // 0 = not connected, 1 = connected
         .active_profile_bonded = !zmk_ble_active_profile_is_open(),        // 0 =  BLE not bonded, 1 = bonded

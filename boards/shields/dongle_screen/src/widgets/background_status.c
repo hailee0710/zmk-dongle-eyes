@@ -130,7 +130,7 @@ static int32_t cos_of(int32_t deg) { return sin_of(deg + 90); }
 // diagonal point that fraction of the waist radius along each axis. All
 // coordinates are shifted by r so the shape sits inside a box of 2r, which is
 // what lv_line expects - its points are relative to the object, not the centre.
-static void build_sparkle(lv_point_precise_t *p, int32_t r, int32_t inset) {
+static void build_sparkle(lv_point_t *p, int32_t r, int32_t inset) {
     // Traced inside the box by half the stroke, because a rounded cap reaches
     // that far past the point it ends on and LVGL clips an object's drawing to
     // its own area. Without this the tips come back shaved.
@@ -156,7 +156,7 @@ static void build_sparkle(lv_point_precise_t *p, int32_t r, int32_t inset) {
 // so it leaves each end quickly and flattens through the bow. Working in polar
 // keeps this to one expression; the same shape as a Bezier would need control
 // points nobody could read.
-static void build_anger_arc(lv_point_precise_t *p, int32_t r, int k, int32_t inset) {
+static void build_anger_arc(lv_point_t *p, int32_t r, int k, int32_t inset) {
     // As with the sparkle: the stroke's rounded cap reaches half its width past
     // the outermost point, so the reach comes in by that much or the tips are
     // clipped against the object's own edge.
@@ -233,9 +233,9 @@ static const char *const BG_SYMBOL_CHARS[] = {"&", "[", "]", "?", "#", "@", "*",
 // Starts one mark pulsing: invisible, then breathing between nothing and its
 // peak forever, offset so the group never beats in unison.
 static void pulse(lv_obj_t *o, lv_opa_t peak, uint32_t cycle_ms, uint32_t delay_ms) {
-    lv_anim_delete(o, sparkle_opa_cb);
+    lv_anim_del(o, sparkle_opa_cb);
     lv_obj_set_style_opa(o, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(o, LV_OBJ_FLAG_HIDDEN);
 
     lv_anim_t a;
     lv_anim_init(&a);
@@ -251,12 +251,16 @@ static void pulse(lv_obj_t *o, lv_opa_t peak, uint32_t cycle_ms, uint32_t delay_
 }
 
 static void quiet(lv_obj_t *o) {
-    lv_anim_delete(o, sparkle_opa_cb);
+    lv_anim_del(o, sparkle_opa_cb);
     lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
 }
 
+// lv_disp_get_hor_res()/lv_disp_get_ver_res() on ZMK v0.3's LVGL 8.3 -
+// renamed to lv_display_get_horizontal/vertical_resolution() on LVGL 9,
+// along with lv_disp_t itself becoming lv_display_t. Both still take NULL
+// for "the default display".
 static void scatter_stress(struct zmk_widget_background *widget) {
-    const int32_t w = lv_display_get_horizontal_resolution(NULL);
+    const int32_t w = lv_disp_get_hor_res(NULL);
 
     for (int i = 0; i < BG_STRESS_LINES; i++) {
         const int32_t len = (int32_t)rnd_between(BG_STRESS_LEN_MIN, BG_STRESS_LEN_MAX);
@@ -323,12 +327,12 @@ static void bg_apply(void *var, int32_t v) {
                       BG_GRAD_H_MIN + ((BG_GRAD_H - BG_GRAD_H_MIN) * v) / 100);
     lv_obj_set_style_opa(widget->stress_grad, (lv_opa_t)((BG_GRAD_MAX_OPA * v) / 100),
                          LV_PART_MAIN);
-    lv_obj_remove_flag(widget->stress_grad, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(widget->stress_grad, LV_OBJ_FLAG_HIDDEN);
 
     for (int i = 0; i < BG_STRESS_LINES; i++) {
         const uint32_t opa = ((uint32_t)BG_STRESS_MAX_OPA * v * widget->stress_weight[i]) / 10000;
         lv_obj_set_style_opa(widget->stress[i], (lv_opa_t)opa, LV_PART_MAIN);
-        lv_obj_remove_flag(widget->stress[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(widget->stress[i], LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -356,7 +360,7 @@ static void bg_update_cb(struct bg_state state) {
             scatter_stress(widget);
         }
 
-        lv_anim_delete(widget, bg_apply);
+        lv_anim_del(widget, bg_apply);
 
         lv_anim_t a;
         lv_anim_init(&a);
@@ -392,8 +396,8 @@ ZMK_SUBSCRIPTION(widget_background, zmk_layer_state_changed);
 
 // Scatters and starts whichever set of marks the effect uses.
 static void show_effect(struct zmk_widget_background *widget, uint8_t effect) {
-    const int32_t w = lv_display_get_horizontal_resolution(NULL);
-    const int32_t h = lv_display_get_vertical_resolution(NULL);
+    const int32_t w = lv_disp_get_hor_res(NULL);
+    const int32_t h = lv_disp_get_ver_res(NULL);
 
     for (int i = 0; i < BG_SPARKLES; i++) {
         quiet(widget->sparkle[i]);
@@ -530,7 +534,7 @@ int zmk_widget_background_init(struct zmk_widget_background *widget, lv_obj_t *p
     widget->obj = lv_obj_create(parent);
     lv_obj_remove_style_all(widget->obj);
     lv_obj_set_size(widget->obj, lv_pct(100), lv_pct(100));
-    lv_obj_remove_flag(widget->obj, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(widget->obj, LV_OBJ_FLAG_SCROLLABLE);
 
     // Creation order is the whole layering scheme, here as much as between
     // widgets: the wash first so it is behind its own strokes, and behind the

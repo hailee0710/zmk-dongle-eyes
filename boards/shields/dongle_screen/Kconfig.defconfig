@@ -27,7 +27,21 @@ choice ZMK_DISPLAY_WORK_QUEUE
 endchoice
 
 config LV_Z_VDB_SIZE
-    default 50
+    # Percentage of the full 320x172x2-byte screen (110,080 bytes) LVGL's
+    # own render/flush buffer covers, doubled by LV_Z_DOUBLE_VDB below for
+    # render-while-flushing. At 50% that's 2x55,040=110,080 bytes - the
+    # single biggest thing in RAM on this build, bigger than either the eyes
+    # framebuffer (helpers/display.h) or the LV_Z_MEM_POOL_SIZE heap below.
+    # 25% (2x27,520=55,040 bytes) frees 55,040 bytes against the ~47KB of
+    # headroom CLAUDE.md's "The ZMK v0.3 framebuffer port" measured with
+    # nothing else drawn yet - more than the eyes framebuffer's own move to
+    # a real alpha channel just spent (see helpers/display.h). Trades some
+    # partial-render smoothness for it: a smaller VDB means LVGL flushes
+    # more, smaller chunks per full-screen redraw rather than fewer, larger
+    # ones, which is a latency/overhead question, not a correctness one -
+    # Zephyr's own LVGL module (Kconfig.memory) defaults this to 10, so 25
+    # is still well above upstream's own idea of frugal.
+    default 25
 
 config LV_Z_DOUBLE_VDB
     default y
@@ -330,10 +344,25 @@ config DONGLE_SCREEN_BATTERY_ACTIVE
 config DONGLE_SCREEN_AMBIENT_LIGHT
     bool "Enable automatic brightness via ambient light sensor"
     default n
+    # nice_nano_v2.overlay - the only board wired up today - disables both
+    # &i2c0 and the apds9960 node it carries for RAM, not hardware, reasons
+    # (see CLAUDE.md's "The ZMK v0.3 framebuffer port"). brightness.c's
+    # ambient-light path does DEVICE_DT_GET(DT_INST(0, avago_apds9960))
+    # unconditionally once this is on, which is a device that was never
+    # instantiated when the node is disabled - a link error, not something
+    # this option turning on should be able to reach. Gating on the node's
+    # own devicetree status, rather than trusting whoever flips this Kconfig
+    # bit to have separately re-enabled it, is what makes turning this on
+    # fail at configure time with a normal "config not available" message
+    # instead. A board with its own sensor wiring under a different node
+    # label would need this dependency retargeted at that label.
+    depends on $(dt_nodelabel_enabled,apds9960)
     select SENSOR
     select APDS9960
     help
       If enabled, the ambient light sensor will be used to automatically adjust screen brightness.
+      Needs a board overlay with an enabled apds9960 node - see nice_nano_v2.overlay's own comment
+      on why it ships with that node disabled by default.
 
 config DONGLE_SCREEN_AMBIENT_LIGHT_TEST
     bool "Enable automatic brightness testing"

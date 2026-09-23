@@ -2,11 +2,16 @@
  * A pair of animated eyes in place of the layer label.
  *
  * Rendered as two white shapes on black - there is no sclera, so an eye is
- * just its pupil. Every expression is either a rounded bar (size, offset and
- * radius) or an lv_line polyline, which keeps the whole vocabulary to two
- * object types per eye, plus a canvas beneath for the two shapes that need a
- * solid interior. Those two are cut out of the neutral shape rather than
- * drawn independently, so the whole set shares one silhouette.
+ * just its pupil. Every expression is either a rounded bar or a polyline
+ * traced by the same point-builder vocabulary (see rounded_rect/clip_below
+ * and the set_*_points functions below), filled and/or stroked into the
+ * small shared framebuffer apply_geometry() owns (helpers/display.h) rather
+ * than built from lv_obj/lv_line/lv_canvas objects - see CLAUDE.md's "The
+ * ZMK v0.3 framebuffer port" for why: ZMK v0.3's LVGL 8.3 doesn't have the
+ * object/style API this widget was originally written against, and drawing
+ * pixels directly sidesteps that instead of translating every call site.
+ * Dialogue and the sleep z's stay real LVGL labels regardless - see
+ * eyes_status.h.
  *
  * On any layer other than base the expression reports the layer, because
  * knowing where you are beats personality. On the base layer the eyes are
@@ -31,7 +36,17 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/wpm.h>
 
 #include "eyes_status.h"
+#include "helpers/display.h"
 #include <fonts.h>
+
+// A handful of LVGL calls below use their v0.3-era (LVGL 8.3) names rather
+// than the ones this file was originally written against (LVGL 9, on ZMK
+// main) - lv_anim_del() not lv_anim_delete(), lv_obj_clear_flag() not
+// lv_obj_remove_flag(), and lv_timer_t's user_data read as a plain struct
+// field (timer->user_data) rather than through a lv_timer_get_user_data()
+// accessor, which doesn't exist in this LVGL version. Everything these
+// touch (dialogue/zzz labels, the widget's own timers) is otherwise
+// unchanged real LVGL, not part of the framebuffer port.
 
 // The box is the whole panel: 320x172 on the ST7789P3 this screen now drives.
 // Children are clipped to their parent's box, so the box has to hold the
@@ -80,6 +95,23 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // keep stepping every 10ms, but the screen only samples them every 80.
 #define BLINK_CLOSE_MS 80
 #define BLINK_OPEN_MS 110
+
+// How often apply_geometry() actually redraws the framebuffer, regardless of
+// how many animation ticks landed since the last redraw. The six per-tick
+// callbacks (openness/strain/spin/wob/shake/gaze) used to call
+// apply_geometry() straight from LVGL's own animation step, which runs every
+// ~10ms - eight times faster than a redraw could ever actually be seen, per
+// the comment above this constant, and with two independent animations
+// running at once (confused's spin+wob, squeezed's strain+shake) that was
+// two full redraws every 10ms for one that mattered. They now just update
+// their own field and set geom_dirty; this is the period of the one timer
+// that turns that back into an actual redraw. Set below BLINK_CLOSE_MS/
+// SACCADE_MS rather than matched to the real 80ms sample rate, so this is
+// never the thing making a blink or a saccade look slower than intended even
+// if the real sample rate turns out faster than the comment above assumes -
+// the cost of guessing low here is a few redundant redraws, not a visible
+// stall.
+#define EYES_REDRAW_MS 40
 // Roughly a third as often as before. At 2.6-6.4s it caught the eye
 // constantly, which is the opposite of what a resting face should do.
 #define BLINK_MIN_MS 7000
@@ -342,7 +374,8 @@ enum eye_shape {
 #define QUIRK_SMALL_D (EYE_W * QUIRK_SMALL_PCT / 100)
 
 // Height of the shut eye in a wink: a lid, not a squint. Its radius is
-// neutral's, which LVGL clamps to half of this, so it comes out a flat lozenge.
+// neutral's, which rounded_rect() clamps to half of this, so it comes out a
+// flat lozenge.
 #define WINK_SHUT_H 10
 
 // A sparkle punched clean through the eye: centred, filling nearly its whole
@@ -367,6 +400,14 @@ enum eye_shape {
 // 50%. Averaging the two lands at 60%: concave, but only slightly, which is
 // what the shape wants.
 #define SPARK_PTS 33
+// set_twinkle_points() lays the outer rounded-rectangle contour down first
+// (rounded_rect()'s own RR_CORNER_PTS-per-corner, times 4 corners, plus one
+// repeated point to close it for the stroke), then the sparkle contour
+// straight after it in the same array - this is the index the sparkle
+// starts at, and the point count of the outer contour on its own, so
+// apply_geometry() can stroke the two separately without a bare 21 standing
+// in for "wherever the outer contour happens to end".
+#define TWINKLE_OUTER_PTS (4 * RR_CORNER_PTS + 1)
 // Tip reach, as a proportion of the room inside the stroke. Measured against
 // that rather than against the contour because the outline is centred on the
 // contour and so covers half its width inward: tips taken all the way to the
@@ -379,22 +420,13 @@ enum eye_shape {
 // sampling a sine gives it an actual bow.
 #define ARC_PTS 7
 
-// Canvas behind the outline, for shapes that need a solid interior. lv_line
-// only strokes, and widening the stroke until it closes a shape destroys the
-// detail that defined it.
-//
-// Must cover the whole box of the largest filled shape, not just the part with
-// ink in it: the polygon is placed by centring its box in the canvas, so a box
-// taller than the canvas would be offset off the top. Unamused is the largest
-// at EYE_W + LID_TAIL by EYE_H. Each pixel costs 3 bytes, twice.
-#define EYE_FILL_W (EYE_W + LID_TAIL + 4)
-#define EYE_FILL_H (EYE_H + 4)
-// A scanline crosses at most this many edges. Nine-point shapes need far less.
-#define FILL_MAX_X 12
-
-// lv_color_t rather than a packed byte array, matching how battery_status.c
-// backs its canvas. Over-allocates against RGB565 but is the proven pattern.
-static lv_color_t eye_fill_buf[2][EYE_FILL_W * EYE_FILL_H];
+// AA edge width for a filled shape's boundary stroke - see apply_geometry().
+// The fill itself is hard-edged (display_fb_fill_polygon, like the LVGL
+// version's canvas fill it replaces); this is only wide enough to blend
+// across the fill's one-pixel stair-stepping, not a visible stroke of its
+// own. 3px centred on the boundary gives a 1.5px band either side, enough to
+// cover the step without visibly thickening the silhouette.
+#define FB_AA_EDGE_W 3
 
 enum expr_id {
     // layer_expr only, never an actual expression: this layer has none, so the
@@ -503,8 +535,9 @@ static const struct expression expressions[EXPR_COUNT] = {
     // looks like it arrived late.
     [EXPR_TWINKLE] = {SHAPE_TWINKLE, EYE_W, EYE_H, 0, 0, 0, false, 7, 0, 0, true, 80},
     // Neutral narrowed, as though focusing on something far off. Full width and
-    // neutral's radius, which LVGL clamps to half the reduced height, so it
-    // ends up a flattened pill rather than a squashed rounded rectangle.
+    // neutral's radius, which rounded_rect() clamps to half the reduced
+    // height, so it ends up a flattened pill rather than a squashed rounded
+    // rectangle.
     [EXPR_NEUTRAL_SQUINT] = {SHAPE_BAR, EYE_W, EYE_H * SQUINT_TO / OPEN_FULL, 0, 0, EYE_R, false,
                              .outline_w = QUIRK_OUTLINE_W},
 };
@@ -590,7 +623,7 @@ static void set_chevron_points(struct zmk_widget_eyes_status *widget, int eye,
     }
 
     const int32_t top = (box_h - h) / 2; // keep the shape vertically centred as it closes
-    lv_point_precise_t *p = widget->pts[eye];
+    lv_point_t *p = widget->pts[eye];
 
     // Left eye points right, right eye points left, so the pair squeezes
     // inward at each other.
@@ -598,11 +631,9 @@ static void set_chevron_points(struct zmk_widget_eyes_status *widget, int eye,
     int32_t apex = point_right ? (w - inset) : inset;
     int32_t open = point_right ? inset : (w - inset);
 
-    p[0] = (lv_point_precise_t){open, top + inset};
-    p[1] = (lv_point_precise_t){apex, top + h / 2};
-    p[2] = (lv_point_precise_t){open, top + h - inset};
-
-    lv_line_set_points(widget->line[eye], p, 3);
+    p[0] = (lv_point_t){open, top + inset};
+    p[1] = (lv_point_t){apex, top + h / 2};
+    p[2] = (lv_point_t){open, top + h - inset};
 }
 
 // Bows downward: ends high, middle low. Reads as eyes closed and settled,
@@ -613,7 +644,7 @@ static void set_arc_points(struct zmk_widget_eyes_status *widget, int eye, int32
     const int32_t top = (box_h - h) / 2;
     const int32_t span = w - 2 * inset;
     const int32_t depth = h - 2 * inset;
-    lv_point_precise_t *p = widget->pts[eye];
+    lv_point_t *p = widget->pts[eye];
 
     for (int i = 0; i < ARC_PTS; i++) {
         // sin across 0..180 degrees: zero at both ends, deepest in the middle.
@@ -621,14 +652,12 @@ static void set_arc_points(struct zmk_widget_eyes_status *widget, int eye, int32
         p[i].x = inset + (span * i) / (ARC_PTS - 1);
         p[i].y = top + inset + (depth * sin_of(deg)) / TRIG_MAX;
     }
-
-    lv_line_set_points(widget->line[eye], p, ARC_PTS);
 }
 
 
 // Traces a rounded rectangle clockwise from its top-left corner. Neutral's
 // silhouette, which the derived expressions are cut out of.
-static int rounded_rect(lv_point_precise_t *p, int32_t x0, int32_t y0, int32_t w, int32_t h,
+static int rounded_rect(lv_point_t *p, int32_t x0, int32_t y0, int32_t w, int32_t h,
                         int32_t r) {
     if (r > w / 2) {
         r = w / 2;
@@ -656,7 +685,7 @@ static int rounded_rect(lv_point_precise_t *p, int32_t x0, int32_t y0, int32_t w
 
 // Sutherland-Hodgman against a single half-plane: keeps whatever lies below
 // the line running from (x0, ya) to (x0 + w, yb).
-static int clip_below(lv_point_precise_t *dst, const lv_point_precise_t *src, int n, int32_t x0,
+static int clip_below(lv_point_t *dst, const lv_point_t *src, int n, int32_t x0,
                       int32_t w, int32_t ya, int32_t yb) {
     int m = 0;
 
@@ -702,9 +731,9 @@ static int set_lid_points(struct zmk_widget_eyes_status *widget, int eye, int32_
     // inside the box.
     const int32_t bowl_h = h - 2 * inset;
 
-    lv_point_precise_t rr[EYE_MAX_PTS];
-    lv_point_precise_t half[EYE_MAX_PTS];
-    lv_point_precise_t *p = widget->pts[eye];
+    lv_point_t rr[EYE_MAX_PTS];
+    lv_point_t half[EYE_MAX_PTS];
+    lv_point_t *p = widget->pts[eye];
 
     int n = rounded_rect(rr, x0, top + inset - bowl_h, eye_w, 2 * bowl_h, EYE_R);
     n = clip_below(half, rr, n, x0, eye_w, top + inset, top + inset);
@@ -730,7 +759,6 @@ static int set_lid_points(struct zmk_widget_eyes_status *widget, int eye, int32_
         p[total++] = p[0];
     }
 
-    lv_line_set_points(widget->line[eye], p, total);
     return total;
 }
 
@@ -754,7 +782,7 @@ static int set_twinkle_points(struct zmk_widget_eyes_status *widget, int eye, in
     const int32_t cy = top + eh / 2;
     const int32_t tip_x = (ew / 2 - inset) * SPARK_FILL_PCT / 100;
     const int32_t tip_y = (eh / 2 - inset) * SPARK_FILL_PCT / 100;
-    lv_point_precise_t *p = widget->pts[eye];
+    lv_point_t *p = widget->pts[eye];
 
     int n = rounded_rect(p, inset, top, ew, eh, EYE_R);
     p[n] = p[0];
@@ -786,17 +814,11 @@ static int set_twinkle_points(struct zmk_widget_eyes_status *widget, int eye, in
         n++;
     }
 
-    // Only the outer contour goes to the white stroke: the sparkle's edge is
-    // internal, and stroking it white would fill the hole back in.
-    lv_line_set_points(widget->line[eye], p, 21);
-
-    // The sparkle's own points are contiguous from index 21, so its outline
-    // can share them. Black, and thin - it exists to smooth the fill's stepped
-    // edge, which has no anti-aliasing of its own, not to be seen.
-    lv_line_set_points(widget->hole[eye], &p[21], SPARK_PTS);
-    lv_obj_remove_flag(widget->hole[eye], LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_size(widget->hole[eye], w, box_h);
-
+    // Points 0..TWINKLE_OUTER_PTS-1 are the outer contour, the rest the
+    // sparkle - apply_geometry() strokes them separately (white outer, black
+    // inner) for the same reason the LVGL version split them across two
+    // objects: the sparkle's edge is internal, and stroking it white would
+    // fill the hole back in.
     return n;
 }
 
@@ -812,8 +834,8 @@ static int set_cropped_points(struct zmk_widget_eyes_status *widget, int eye, in
     const int32_t ew = w - 2 * inset;
     const int32_t cut = top + (eh * CROP_TOP_PCT) / 100;
 
-    lv_point_precise_t rr[EYE_MAX_PTS];
-    lv_point_precise_t *p = widget->pts[eye];
+    lv_point_t rr[EYE_MAX_PTS];
+    lv_point_t *p = widget->pts[eye];
 
     int n = rounded_rect(rr, x0, top, ew, eh, EYE_R);
     n = clip_below(p, rr, n, x0, ew, cut, cut);
@@ -822,7 +844,6 @@ static int set_cropped_points(struct zmk_widget_eyes_status *widget, int eye, in
         p[n++] = p[0];
     }
 
-    lv_line_set_points(widget->line[eye], p, n);
     return n;
 }
 
@@ -834,8 +855,8 @@ static int set_angry_points(struct zmk_widget_eyes_status *widget, int eye, int3
     const int32_t x0 = inset;
     const int32_t ew = w - 2 * inset;
 
-    lv_point_precise_t rr[EYE_MAX_PTS];
-    lv_point_precise_t *p = widget->pts[eye];
+    lv_point_t rr[EYE_MAX_PTS];
+    lv_point_t *p = widget->pts[eye];
 
     int n = rounded_rect(rr, x0, top, ew, eh, EYE_R);
 
@@ -855,7 +876,6 @@ static int set_angry_points(struct zmk_widget_eyes_status *widget, int eye, int3
         p[n++] = p[0];
     }
 
-    lv_line_set_points(widget->line[eye], p, n);
     return n;
 }
 
@@ -869,7 +889,7 @@ static void set_spiral_points(struct zmk_widget_eyes_status *widget, int eye, in
     // rate. Only the drift below is per-eye, so they read as a matched pair
     // that happens to be unsteady rather than as two independent objects.
     const int32_t phase = widget->spin;
-    lv_point_precise_t *p = widget->pts[eye];
+    lv_point_t *p = widget->pts[eye];
 
     for (int i = 0; i < SPIRAL_PTS; i++) {
         int32_t deg = phase + (SPIRAL_TURNS * i) / last;
@@ -877,93 +897,18 @@ static void set_spiral_points(struct zmk_widget_eyes_status *widget, int eye, in
         p[i].x = cx + (r * cos_of(deg)) / TRIG_MAX;
         p[i].y = cy + (r * sin_of(deg)) / TRIG_MAX;
     }
-
-    lv_line_set_points(widget->line[eye], p, SPIRAL_PTS);
 }
 
 
-// Even-odd scanline fill of the polygon the outline traces. Deliberately not
-// anti-aliased: the same points are stroked on top with rounded joins, and
-// that stroke both softens the corners and covers the stepped edges this
-// leaves behind.
-static void fill_polygon(lv_obj_t *canvas, const lv_point_precise_t *p, int n, int32_t ox,
-                         int32_t oy) {
-    lv_draw_buf_t *db = lv_canvas_get_draw_buf(canvas);
-    uint8_t *const base = db->data;
-    const uint32_t stride = db->header.stride;
-
-    // Black is all-zero bytes in RGB565, so the clear is one memset rather than
-    // a per-pixel background fill.
-    lv_memzero(base, stride * EYE_FILL_H);
-
-    // Only scan the rows the polygon actually reaches. The canvas is sized for
-    // the tallest expression, but this runs on every step of a morph, and for
-    // most of one the eye is a few pixels tall inside eighty. Rows outside this
-    // span can have no crossings, so skipping them changes nothing.
-    int32_t y_top = EYE_FILL_H - 1;
-    int32_t y_bot = 0;
-    for (int i = 0; i < n; i++) {
-        const int32_t y = (int32_t)p[i].y + oy;
-        if (y < y_top) {
-            y_top = y;
-        }
-        if (y > y_bot) {
-            y_bot = y;
-        }
-    }
-    y_top = MAX(y_top, 0);
-    y_bot = MIN(y_bot, EYE_FILL_H - 1);
-
-    for (int32_t y = y_top; y <= y_bot; y++) {
-        int32_t xs[FILL_MAX_X];
-        int cnt = 0;
-
-        for (int i = 0; i < n && cnt < FILL_MAX_X; i++) {
-            int j = (i + 1) % n;
-            int32_t y0 = (int32_t)p[i].y + oy;
-            int32_t y1 = (int32_t)p[j].y + oy;
-
-            // Half-open test, so a vertex lying exactly on the scanline is
-            // counted once rather than twice.
-            if ((y0 <= y && y1 > y) || (y1 <= y && y0 > y)) {
-                int32_t x0 = (int32_t)p[i].x + ox;
-                int32_t x1 = (int32_t)p[j].x + ox;
-                xs[cnt++] = x0 + ((y - y0) * (x1 - x0)) / (y1 - y0);
-            }
-        }
-
-        for (int a = 1; a < cnt; a++) {
-            int32_t v = xs[a];
-            int b = a - 1;
-            while (b >= 0 && xs[b] > v) {
-                xs[b + 1] = xs[b];
-                b--;
-            }
-            xs[b + 1] = v;
-        }
-
-        for (int k = 0; k + 1 < cnt; k += 2) {
-            int32_t from = MAX(xs[k], 0);
-            int32_t to = MIN(xs[k + 1], EYE_FILL_W - 1);
-
-            // Direct spans rather than lv_canvas_set_px. That call re-reads the
-            // draw buffer and switches on the colour format for every single
-            // pixel, and this covers a few thousand per eye per frame - enough
-            // to be felt as a hitch when the twinkle morphs in. White is 0xFFFF
-            // in RGB565 whichever way round the bytes go, so LV_COLOR_16_SWAP
-            // does not come into it.
-            uint16_t *const row = (uint16_t *)(base + (uint32_t)y * stride);
-            for (int32_t x = from; x <= to; x++) {
-                row[x] = 0xFFFF;
-            }
-        }
-    }
-
-    // Writing into the buffer behind LVGL's back means saying so once, which is
-    // cheaper than whatever set_px was doing per pixel regardless.
-    lv_obj_invalidate(canvas);
-}
-
+// Draws both eyes into the shared framebuffer (helpers/display.h) from
+// scratch - there is no persistent object tree to update in place any more,
+// so every call clears the buffer and redraws whatever the current
+// expression and animation state say belongs there. Called from the redraw
+// timer (see EYES_REDRAW_MS), not straight from the animation callbacks that
+// actually change that state - they only flag widget->geom_dirty; the LVGL
+// version's canvas-fill-plus-line-stroke split lives on here as a fill pass
+// (display_fb_fill_polygon, still deliberately hard-edged) topped by an
+// antialiasing stroke pass (display_fb_stroke_aa) - see FB_AA_EDGE_W.
 static void apply_geometry(struct zmk_widget_eyes_status *widget) {
     const struct expression *e = &expressions[widget->expr];
 
@@ -972,6 +917,8 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
     // that much makes a line shape occupy the same box as a bar, so the eyes
     // don't lurch outward when the expression changes.
     const int32_t inset = lw / 2;
+
+    display_fb_clear();
 
     for (int i = 0; i < 2; i++) {
         enum eye_shape shape = e->shape;
@@ -987,16 +934,13 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
         int16_t dx = (i == 0 ? -out : out) + e->dx + widget->gaze_x;
         int16_t dy = e->dy + widget->gaze_y;
 
-        // Written unconditionally on both objects, not just on the branch that
-        // uses it. Setting it only inside the bar branch left a stale tilt on a
-        // hidden bar, which reappeared the next time that bar was shown by an
-        // expression that never asked to be rotated. Mirrored, so the pair
-        // tilts toward each other rather than both leaning the same way.
+        // Mirrored, so the pair tilts toward each other rather than both
+        // leaning the same way. Currently always 0 - no expression sets
+        // rot - but every expression change still runs it through
+        // display_fb_rotate_points() rather than special-casing rot==0 away
+        // entirely, so a future expression can set it without anyone having
+        // to remember this path exists.
         int16_t rot = i ? -e->rot : e->rot;
-        lv_obj_set_style_transform_rotation(widget->bar[i], rot, LV_PART_MAIN);
-        lv_obj_set_style_transform_rotation(widget->line[i], rot, LV_PART_MAIN);
-        lv_obj_set_style_transform_pivot_x(widget->line[i], e->w / 2, LV_PART_MAIN);
-        lv_obj_set_style_transform_pivot_y(widget->line[i], box_h / 2, LV_PART_MAIN);
 
         // Same offset for both eyes, deliberately: this one shudders as a
         // pair rather than each eye going its own way.
@@ -1013,37 +957,78 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
             dy += (int16_t)((sin_of(widget->wob) * WOBBLE_PX) / TRIG_MAX);
         }
 
+        // Screen-space centre of this eye's box, in the small eyes buffer's
+        // own coordinates - what lv_obj_align(CENTER, dx, dy) used to place
+        // an object at, now where display_fb_rotate_points() places the
+        // shape's own pivot.
+        const int32_t place_x = DISPLAY_FB_W / 2 + dx;
+        const int32_t place_y = DISPLAY_FB_H / 2 + dy;
+
+        lv_point_t *p = widget->pts[i];
+
         if (shape == SHAPE_BAR) {
             int32_t h = scaled(box_h, widget->openness);
             if (h < 2) {
                 h = 2;
             }
 
-            lv_obj_add_flag(widget->fill[i], LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(widget->hole[i], LV_OBJ_FLAG_HIDDEN);
-            lv_obj_remove_flag(widget->bar[i], LV_OBJ_FLAG_HIDDEN);
+            // display_fb_stroke_aa() centres its stroke on the path it's
+            // given, unlike LVGL's own border/edge rendering, which the bar
+            // this replaces relied on staying inside the object's box:
+            // lv_obj_set_style_border_width() insets a border from the
+            // object's own edge, and a plain filled rect's antialiasing is
+            // free, adding no width of its own. Tracing the path at the
+            // nominal e->w x h box and then stroking it, as the first cut of
+            // this port did, put half the stroke width outside that box
+            // (solid bars grew by FB_AA_EDGE_W/2, about 1.5px) or outside a
+            // hollow ring's own hole (outline_w bars grew by outline_w/2,
+            // e.g. 3px for QUIRK_OUTLINE_W=6) - visible as the eyes' own
+            // silhouette growing between expressions that share a box on
+            // paper. Insetting the traced path by half the stroke width
+            // first puts the stroke's outer edge exactly back on the
+            // nominal box, matching both the solid bar's old edge-exactly-
+            // at-the-box LVGL rendering and the hollow ring's border-sits-
+            // inside-the-box one.
+            int32_t stroke_w = e->outline_w ? e->outline_w : FB_AA_EDGE_W;
+            int32_t bar_inset = stroke_w / 2;
+            // Clamped so a hollow ring thicker than the box it's meant to
+            // sit inside (only possible mid-blink, when h can shrink to as
+            // little as 2px against a 6px QUIRK_OUTLINE_W) can't turn into a
+            // negative-size rect - rounded_rect() has no floor of its own on
+            // w/h. Falling back to "no inset" there just reads as a
+            // solid-looking bar for the instant the blink is at its
+            // narrowest, the same degenerate case LVGL's own border
+            // rendering collapses to when a border is wider than its box.
+            int32_t max_inset = (MIN(e->w, h) / 2) - 1;
+            if (bar_inset > max_inset) {
+                bar_inset = MAX(max_inset, 0);
+            }
+            int32_t bar_r = e->radius > bar_inset ? e->radius - bar_inset : 0;
 
-            lv_obj_set_size(widget->bar[i], e->w, h);
-            lv_obj_set_style_radius(widget->bar[i], e->radius, LV_PART_MAIN);
+            int n = rounded_rect(p, bar_inset, bar_inset, e->w - 2 * bar_inset, h - 2 * bar_inset,
+                                 bar_r);
+            // rounded_rect() traces the loop but doesn't repeat its first
+            // point as its last (nothing needed to, since fill_polygon's own
+            // wraparound closes it for a fill) - display_fb_stroke_aa() has
+            // no such wraparound, so without this the left edge (the one
+            // seam rounded_rect never revisits) would be the one un-stroked
+            // side of an otherwise-closed shape.
+            p[n] = p[0];
+            n++;
 
-            // Solid and hollow share one object, so both properties are written
-            // every time rather than only on the branch that wants them - the
-            // same trap the rotation fell into, where a value set on one
-            // expression survived onto the next one to use this bar.
-            lv_obj_set_style_bg_opa(widget->bar[i], e->outline_w ? LV_OPA_TRANSP : LV_OPA_COVER,
-                                    LV_PART_MAIN);
-            lv_obj_set_style_border_width(widget->bar[i], e->outline_w, LV_PART_MAIN);
-            lv_obj_set_style_transform_pivot_x(widget->bar[i], e->w / 2, LV_PART_MAIN);
-            lv_obj_set_style_transform_pivot_y(widget->bar[i], h / 2, LV_PART_MAIN);
-            lv_obj_align(widget->bar[i], LV_ALIGN_CENTER, dx, dy);
-
+            display_fb_rotate_points(p, n, e->w / 2, h / 2, rot, place_x, place_y);
+            if (!e->outline_w) {
+                // Solid: fill the inset rect hard-edged first, same as every
+                // other filled shape below, then the stroke on top supplies
+                // the antialiased edge - both are the same colour, so which
+                // one runs first only matters for the interior pixels the
+                // stroke's own coverage falls below 255 on, and both leave
+                // those white either way.
+                display_fb_fill_polygon(p, n, 0, 0, DISPLAY_COLOR_WHITE);
+            }
+            display_fb_stroke_aa(p, n, 0, 0, stroke_w, DISPLAY_COLOR_WHITE);
             continue;
         }
-
-        lv_obj_add_flag(widget->bar[i], LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(widget->hole[i], LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
 
         int npts;
 
@@ -1051,7 +1036,6 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
         case SHAPE_ARC_DOWN:
             set_arc_points(widget, i, e->w, box_h, inset);
             npts = ARC_PTS;
-            break;
             break;
         case SHAPE_LIDDED:
             npts = set_lid_points(widget, i, e->w, box_h, inset);
@@ -1069,64 +1053,82 @@ static void apply_geometry(struct zmk_widget_eyes_status *widget) {
             set_spiral_points(widget, i, e->w, box_h, inset);
             npts = SPIRAL_PTS;
             break;
-            break;
         default:
             set_chevron_points(widget, i, shape, e->w, box_h, widget->strain, inset);
             npts = 3;
             break;
         }
 
-        if (e->filled) {
-            // The canvas is larger than the shape's box, so the points are
-            // offset to sit centred in it and both objects can then align to
-            // the same point.
-            fill_polygon(widget->fill[i], widget->pts[i], npts, (EYE_FILL_W - e->w) / 2,
-                         (EYE_FILL_H - box_h) / 2);
+        display_fb_rotate_points(p, npts, e->w / 2, box_h / 2, rot, place_x, place_y);
 
-            lv_obj_remove_flag(widget->fill[i], LV_OBJ_FLAG_HIDDEN);
-            lv_obj_set_style_transform_pivot_x(widget->fill[i], EYE_FILL_W / 2, LV_PART_MAIN);
-            lv_obj_set_style_transform_pivot_y(widget->fill[i], EYE_FILL_H / 2, LV_PART_MAIN);
-            lv_obj_set_style_transform_rotation(widget->fill[i], rot, LV_PART_MAIN);
-            lv_obj_align(widget->fill[i], LV_ALIGN_CENTER, dx, dy);
+        if (shape == SHAPE_TWINKLE) {
+            // The two contours (outer TWINKLE_OUTER_PTS points, sparkle
+            // SPARK_PTS from there) fill as one even-odd shape -
+            // display_fb_fill_polygon()'s wraparound treats the whole array
+            // as one cyclic polygon, which is exactly what cuts the hole -
+            // but they stroke separately. Stroking all npts as one open
+            // chain would draw the two bridging edges between the contours,
+            // which is the one thing that must not happen: that would paint
+            // a visible seam across the hole and, being white, start filling
+            // it back in.
+            //
+            // The outer contour strokes at `lw`, not a thin AA-only width:
+            // set_twinkle_points() already built it inset by lw/2 (the same
+            // `inset` passed to every point-builder here), reserving exactly
+            // that much margin for this stroke to fill back out to the
+            // nominal box - stroking it any narrower (an earlier version of
+            // this used FB_AA_EDGE_W here) leaves that margin's outer slice
+            // unpainted, which reads as the whole eye shrunk by a few px
+            // rather than as a softer edge.
+            display_fb_fill_polygon(p, npts, 0, 0, DISPLAY_COLOR_WHITE);
+            display_fb_stroke_aa(p, TWINKLE_OUTER_PTS, 0, 0, lw, DISPLAY_COLOR_WHITE);
+            // Black and thin - exists only to smooth the hole's own stepped
+            // edge, the same job the LVGL version's separate hole object did.
+            display_fb_stroke_aa(&p[TWINKLE_OUTER_PTS], npts - TWINKLE_OUTER_PTS, 0, 0,
+                                 SPARK_EDGE_W, DISPLAY_COLOR_BLACK);
+        } else if (e->filled) {
+            // As above: lidded/angry both build their outline inset by lw/2
+            // (see set_lid_points/set_angry_points), so the stroke has to be
+            // `lw` to fill that margin back out to the nominal box, not the
+            // thin FB_AA_EDGE_W a bar's own already-full-size fill wants.
+            display_fb_fill_polygon(p, npts, 0, 0, DISPLAY_COLOR_WHITE);
+            display_fb_stroke_aa(p, npts, 0, 0, lw, DISPLAY_COLOR_WHITE);
         } else {
-            lv_obj_add_flag(widget->fill[i], LV_OBJ_FLAG_HIDDEN);
+            display_fb_stroke_aa(p, npts, 0, 0, lw, DISPLAY_COLOR_WHITE);
         }
-
-        lv_obj_set_style_line_width(widget->line[i], lw, LV_PART_MAIN);
-        lv_obj_set_size(widget->line[i], e->w, box_h);
-
-        if (!lv_obj_has_flag(widget->hole[i], LV_OBJ_FLAG_HIDDEN)) {
-            lv_obj_align(widget->hole[i], LV_ALIGN_CENTER, dx, dy);
-            lv_obj_move_foreground(widget->hole[i]);
-        }
-        // Aligns by the object's own centre, exactly like the bars do - the
-        // line must not carry an extra half-width offset.
-        lv_obj_align(widget->line[i], LV_ALIGN_CENTER, dx, dy);
     }
+
+    display_fb_flush();
 }
 
+// These six run straight off LVGL's own animation step (every ~10ms) rather
+// than the panel's real sample rate, so none of them redraw directly any
+// more - each just updates its own field and leaves geom_dirty for
+// EYES_REDRAW_MS's timer to pick up, same as every other place in this file
+// that changes state apply_geometry() reads. See geom_dirty's own comment in
+// eyes_status.h for why.
 static void openness_anim_cb(void *var, int32_t v) {
     struct zmk_widget_eyes_status *widget = var;
     widget->openness = (int16_t)v;
-    apply_geometry(widget);
+    widget->geom_dirty = true;
 }
 
 static void strain_anim_cb(void *var, int32_t v) {
     struct zmk_widget_eyes_status *widget = var;
     widget->strain = (int16_t)v;
-    apply_geometry(widget);
+    widget->geom_dirty = true;
 }
 
 static void spin_anim_cb(void *var, int32_t v) {
     struct zmk_widget_eyes_status *widget = var;
     widget->spin = (int16_t)v;
-    apply_geometry(widget);
+    widget->geom_dirty = true;
 }
 
 static void wob_anim_cb(void *var, int32_t v) {
     struct zmk_widget_eyes_status *widget = var;
     widget->wob = (int16_t)v;
-    apply_geometry(widget);
+    widget->geom_dirty = true;
 }
 
 static void shake_anim_cb(void *var, int32_t v) {
@@ -1139,18 +1141,35 @@ static void shake_anim_cb(void *var, int32_t v) {
     }
 
     widget->shake = (int16_t)off;
-    apply_geometry(widget);
+    widget->geom_dirty = true;
 }
 
 static void gaze_anim_cb(void *var, int32_t v) {
     struct zmk_widget_eyes_status *widget = var;
     widget->gaze_x = (int16_t)v;
-    apply_geometry(widget);
+    widget->geom_dirty = true;
 }
 
+// The redraw timer itself - see EYES_REDRAW_MS and geom_dirty's own comment
+// in eyes_status.h. Skipping the redraw when nothing is dirty isn't just an
+// optimisation on top of the period already doing most of the work: it also
+// keeps a completely idle face (nothing animating, e.g. most quirks and
+// every static expression) from redrawing every EYES_REDRAW_MS for no
+// reason at all.
+static void redraw_timer_cb(lv_timer_t *timer) {
+    struct zmk_widget_eyes_status *widget = timer->user_data;
+    if (widget->geom_dirty) {
+        widget->geom_dirty = false;
+        apply_geometry(widget);
+    }
+}
+
+// lv_anim_ready_cb_t/lv_anim_set_ready_cb() on ZMK v0.3's LVGL 8.3 - LVGL 9
+// renamed both to lv_anim_completed_cb_t/lv_anim_set_completed_cb() for the
+// same "fires when the animation finishes normally" callback.
 static void animate(struct zmk_widget_eyes_status *widget, lv_anim_exec_xcb_t cb, int32_t from,
                     int32_t to, uint32_t ms, uint32_t delay, lv_anim_path_cb_t path,
-                    lv_anim_completed_cb_t done) {
+                    lv_anim_ready_cb_t done) {
     lv_anim_t a;
     lv_anim_init(&a);
     lv_anim_set_var(&a, widget);
@@ -1160,7 +1179,7 @@ static void animate(struct zmk_widget_eyes_status *widget, lv_anim_exec_xcb_t cb
     lv_anim_set_delay(&a, delay);
     lv_anim_set_path_cb(&a, path);
     if (done) {
-        lv_anim_set_completed_cb(&a, done);
+        lv_anim_set_ready_cb(&a, done);
     }
     lv_anim_start(&a);
 }
@@ -1186,10 +1205,10 @@ static void loop_anim(struct zmk_widget_eyes_status *widget, lv_anim_exec_xcb_t 
 // Only one of these should ever be running, so both are cleared on every
 // expression change and the incoming one restarted.
 static void set_idle_motion(struct zmk_widget_eyes_status *widget) {
-    lv_anim_delete(widget, strain_anim_cb);
-    lv_anim_delete(widget, spin_anim_cb);
-    lv_anim_delete(widget, shake_anim_cb);
-    lv_anim_delete(widget, wob_anim_cb);
+    lv_anim_del(widget, strain_anim_cb);
+    lv_anim_del(widget, spin_anim_cb);
+    lv_anim_del(widget, shake_anim_cb);
+    lv_anim_del(widget, wob_anim_cb);
     widget->strain = OPEN_FULL;
     widget->spin = 0;
     widget->shake = 0;
@@ -1299,7 +1318,7 @@ static void dialogue_reveal_cb(void *var, int32_t shown) {
             // Raised only on the way out of hidden. Doing it every step would
             // reorder the children on every frame for no gain.
             if (lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN)) {
-                lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_clear_flag(o, LV_OBJ_FLAG_HIDDEN);
                 lv_obj_move_foreground(o);
             }
         } else {
@@ -1332,9 +1351,9 @@ static void say(struct zmk_widget_eyes_status *widget, const char *text, uint8_t
     }
     dialogue_prio = prio;
 
-    lv_anim_delete(widget, dialogue_fade_cb);
-    lv_anim_delete(widget, dialogue_reveal_cb);
-    lv_anim_delete(widget, dialogue_rise_cb);
+    lv_anim_del(widget, dialogue_fade_cb);
+    lv_anim_del(widget, dialogue_reveal_cb);
+    lv_anim_del(widget, dialogue_rise_cb);
 
     dialogue_text = text;
 
@@ -1384,7 +1403,7 @@ static void say(struct zmk_widget_eyes_status *widget, const char *text, uint8_t
     lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
     lv_anim_set_delay(&a, reveal_ms + DIALOGUE_HOLD_MS);
     lv_anim_set_time(&a, DIALOGUE_FADE_MS);
-    lv_anim_set_completed_cb(&a, dialogue_done);
+    lv_anim_set_ready_cb(&a, dialogue_done);
     lv_anim_start(&a);
 
     // Rides alongside the fade on the same schedule. Eased out, so it lifts
@@ -1407,7 +1426,7 @@ static void say(struct zmk_widget_eyes_status *widget, const char *text, uint8_t
 static void show_zzz(struct zmk_widget_eyes_status *widget, bool show) {
     for (int i = 0; i < 3; i++) {
         if (show) {
-            lv_obj_remove_flag(widget->zzz[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(widget->zzz[i], LV_OBJ_FLAG_HIDDEN);
             // Dialogue sits above the face wherever they meet.
             lv_obj_move_foreground(widget->zzz[i]);
         } else {
@@ -1417,7 +1436,7 @@ static void show_zzz(struct zmk_widget_eyes_status *widget, bool show) {
 }
 
 static void zzz_timer_cb(lv_timer_t *timer) {
-    struct zmk_widget_eyes_status *widget = lv_timer_get_user_data(timer);
+    struct zmk_widget_eyes_status *widget = timer->user_data;
     if (widget->expr == EXPR_SLEEPY) {
         show_zzz(widget, true);
     }
@@ -1436,7 +1455,7 @@ static void morph_open(lv_anim_t *a) {
 
     const struct expression *e = &expressions[widget->expr];
     if (!e->wander && (widget->gaze_x || widget->gaze_y)) {
-        lv_anim_delete(widget, gaze_anim_cb);
+        lv_anim_del(widget, gaze_anim_cb);
         widget->gaze_x = 0;
         widget->gaze_y = 0;
     }
@@ -1484,13 +1503,13 @@ static void set_expression(struct zmk_widget_eyes_status *widget, enum expr_id i
     uint32_t close_ms = expressions[id].morph_ms ? (uint32_t)expressions[id].morph_ms / 2
                                                  : MORPH_CLOSE_MS;
 
-    lv_anim_delete(widget, openness_anim_cb);
+    lv_anim_del(widget, openness_anim_cb);
     animate(widget, openness_anim_cb, widget->openness, OPEN_SHUT, close_ms, 0,
             lv_anim_path_ease_in, morph_open);
 }
 
 static void blink_timer_cb(lv_timer_t *timer) {
-    struct zmk_widget_eyes_status *widget = lv_timer_get_user_data(timer);
+    struct zmk_widget_eyes_status *widget = timer->user_data;
     const struct expression *e = &expressions[widget->expr];
 
     // The spiral is excluded by shape rather than by flag because openness
@@ -1532,7 +1551,7 @@ static const enum expr_id quirks[] = {
 };
 
 static void glance_timer_cb(lv_timer_t *timer) {
-    struct zmk_widget_eyes_status *widget = lv_timer_get_user_data(timer);
+    struct zmk_widget_eyes_status *widget = timer->user_data;
     const struct expression *e = &expressions[widget->expr];
 
     if (e->wander) {
@@ -1614,7 +1633,7 @@ static bool alert_armed;
 static lv_timer_t *nag_timer;
 
 static void nag_timer_cb(lv_timer_t *timer) {
-    struct zmk_widget_eyes_status *widget = lv_timer_get_user_data(timer);
+    struct zmk_widget_eyes_status *widget = timer->user_data;
 
     // One shot per pause, by pausing rather than by a repeat count: LVGL
     // deletes a timer whose count reaches zero, and this one has to survive to
@@ -1693,7 +1712,7 @@ static struct eyes_state eyes_get_state(const zmk_event_t *eh) {
 // One timer alternating between "pick one" and "put it back", rescheduling
 // itself to the hold time or to the next long gap accordingly.
 static void quirk_timer_cb(lv_timer_t *timer) {
-    struct zmk_widget_eyes_status *widget = lv_timer_get_user_data(timer);
+    struct zmk_widget_eyes_status *widget = timer->user_data;
 
     if (quirk != EXPR_NONE) {
         quirk = EXPR_NONE;
@@ -1809,42 +1828,14 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
     widget->obj = lv_obj_create(parent);
     lv_obj_remove_style_all(widget->obj);
     lv_obj_set_size(widget->obj, EYES_W, EYES_H);
-    lv_obj_remove_flag(widget->obj, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(widget->obj, LV_OBJ_FLAG_SCROLLABLE);
 
-    for (int i = 0; i < 2; i++) {
-        widget->bar[i] = lv_obj_create(widget->obj);
-        lv_obj_remove_style_all(widget->bar[i]);
-        lv_obj_set_style_bg_color(widget->bar[i], lv_color_white(), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(widget->bar[i], LV_OPA_COVER, LV_PART_MAIN);
-        // Colour and opacity set once; only the width varies per expression,
-        // and a width of zero draws nothing.
-        lv_obj_set_style_border_color(widget->bar[i], lv_color_white(), LV_PART_MAIN);
-        lv_obj_set_style_border_opa(widget->bar[i], LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_remove_flag(widget->bar[i], LV_OBJ_FLAG_SCROLLABLE);
-
-        // Created before the line so it sits underneath it: the fill supplies
-        // the interior, the stroke on top supplies smooth, rounded edges.
-        widget->fill[i] = lv_canvas_create(widget->obj);
-        lv_canvas_set_buffer(widget->fill[i], eye_fill_buf[i], EYE_FILL_W, EYE_FILL_H,
-                             LV_COLOR_FORMAT_RGB565);
-        lv_obj_add_flag(widget->fill[i], LV_OBJ_FLAG_HIDDEN);
-
-        widget->hole[i] = lv_line_create(widget->obj);
-        lv_obj_remove_style_all(widget->hole[i]);
-        lv_obj_set_style_line_color(widget->hole[i], lv_color_black(), LV_PART_MAIN);
-        lv_obj_set_style_line_width(widget->hole[i], SPARK_EDGE_W, LV_PART_MAIN);
-        lv_obj_set_style_line_rounded(widget->hole[i], true, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(widget->hole[i], 0, LV_PART_MAIN);
-        lv_obj_add_flag(widget->hole[i], LV_OBJ_FLAG_HIDDEN);
-
-        widget->line[i] = lv_line_create(widget->obj);
-        lv_obj_remove_style_all(widget->line[i]);
-        lv_obj_set_style_line_color(widget->line[i], lv_color_white(), LV_PART_MAIN);
-        lv_obj_set_style_line_width(widget->line[i], LINE_W, LV_PART_MAIN);
-        lv_obj_set_style_line_rounded(widget->line[i], true, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(widget->line[i], 0, LV_PART_MAIN);
-        lv_obj_add_flag(widget->line[i], LV_OBJ_FLAG_HIDDEN);
-    }
+    // widget->obj stays the full panel box - dialogue and the z's are still
+    // positioned against EYES_W/EYES_H/DIALOGUE_BOTTOM within it, unchanged.
+    // Only the eyes themselves moved, into the smaller framebuffer this
+    // creates and centres inside that box.
+    widget->fb_img = display_fb_init(widget->obj);
+    lv_obj_align(widget->fb_img, LV_ALIGN_CENTER, 0, 0);
 
     // Dialogue first: it measures the line height that the z's are placed
     // against.
@@ -1859,7 +1850,11 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
     widget->gaze_x = 0;
     widget->gaze_y = 0;
     widget->idle = false;
+    widget->geom_dirty = false; // the draw right below is the first frame, not a stale one
     apply_geometry(widget);
+
+    lv_timer_t *redraw = lv_timer_create(redraw_timer_cb, EYES_REDRAW_MS, widget);
+    lv_timer_set_repeat_count(redraw, -1);
 
     lv_timer_t *blink =
         lv_timer_create(blink_timer_cb, rnd_range(BLINK_MIN_MS, BLINK_MAX_MS), widget);

@@ -167,33 +167,38 @@ static void draw_battery(lv_obj_t *canvas, uint8_t level, bool usb_present)
     const lv_color_t bg = lv_color_black();
     const lv_color_t fg = level_color(level);
 
+    // lv_canvas_set_px() below takes no opacity argument on ZMK v0.3's LVGL
+    // 8.3 (it's a plain lv_canvas_set_px_color() wrapper there) - LVGL 9
+    // added the trailing lv_opa_t parameter this used to pass LV_OPA_COVER
+    // to. Every call here was already fully opaque, so dropping the
+    // argument changes nothing about what gets drawn.
     lv_canvas_fill_bg(canvas, bg, LV_OPA_COVER);
 
     // Body outline. Drawn pixel by pixel: lv_canvas_draw_rect doesn't exist in
     // LVGL v8+.
     for (int x = 0; x < BAT_BODY_W; x++)
     {
-        lv_canvas_set_px(canvas, x, 0, fg, LV_OPA_COVER);
-        lv_canvas_set_px(canvas, x, BAT_BAR_H - 1, fg, LV_OPA_COVER);
+        lv_canvas_set_px(canvas, x, 0, fg);
+        lv_canvas_set_px(canvas, x, BAT_BAR_H - 1, fg);
     }
     for (int y = 0; y < BAT_BAR_H; y++)
     {
-        lv_canvas_set_px(canvas, 0, y, fg, LV_OPA_COVER);
-        lv_canvas_set_px(canvas, BAT_BODY_W - 1, y, fg, LV_OPA_COVER);
+        lv_canvas_set_px(canvas, 0, y, fg);
+        lv_canvas_set_px(canvas, BAT_BODY_W - 1, y, fg);
     }
 
     // Clip the four corners so it doesn't read as a hard rectangle.
-    lv_canvas_set_px(canvas, 0, 0, bg, LV_OPA_COVER);
-    lv_canvas_set_px(canvas, BAT_BODY_W - 1, 0, bg, LV_OPA_COVER);
-    lv_canvas_set_px(canvas, 0, BAT_BAR_H - 1, bg, LV_OPA_COVER);
-    lv_canvas_set_px(canvas, BAT_BODY_W - 1, BAT_BAR_H - 1, bg, LV_OPA_COVER);
+    lv_canvas_set_px(canvas, 0, 0, bg);
+    lv_canvas_set_px(canvas, BAT_BODY_W - 1, 0, bg);
+    lv_canvas_set_px(canvas, 0, BAT_BAR_H - 1, bg);
+    lv_canvas_set_px(canvas, BAT_BODY_W - 1, BAT_BAR_H - 1, bg);
 
     // Terminal on the right-hand end.
     for (int x = BAT_BODY_W; x < BAT_BODY_W + BAT_NUB_W; x++)
     {
         for (int y = (BAT_BAR_H - BAT_NUB_H) / 2; y < (BAT_BAR_H + BAT_NUB_H) / 2; y++)
         {
-            lv_canvas_set_px(canvas, x, y, fg, LV_OPA_COVER);
+            lv_canvas_set_px(canvas, x, y, fg);
         }
     }
 
@@ -208,7 +213,7 @@ static void draw_battery(lv_obj_t *canvas, uint8_t level, bool usb_present)
         {
             for (int y = 2; y < BAT_BAR_H - 2; y++)
             {
-                lv_canvas_set_px(canvas, x, y, fg, LV_OPA_COVER);
+                lv_canvas_set_px(canvas, x, y, fg);
             }
         }
     }
@@ -363,8 +368,12 @@ int zmk_widget_dongle_battery_status_init(struct zmk_widget_dongle_battery_statu
         lv_obj_t *image_canvas = lv_canvas_create(widget->obj);
         lv_obj_t *battery_label = lv_label_create(widget->obj);
 
+        // LV_IMG_CF_TRUE_COLOR, not LVGL 9's LV_COLOR_FORMAT_RGB565: on ZMK
+        // v0.3's LVGL 8.3, lv_canvas_set_buffer() still takes the image
+        // color-format enum (lv_img_cf_t), which LVGL 9 replaced with its
+        // own lv_color_format_t for this call.
         lv_canvas_set_buffer(image_canvas, battery_image_buffer[i], BAT_BAR_W, BAT_BAR_H,
-                             LV_COLOR_FORMAT_RGB565);
+                             LV_IMG_CF_TRUE_COLOR);
 
         // Number then bar, both on the same line, one cell per half.
         lv_obj_set_style_text_font(battery_label, &Fredoka_SemiBold_20, 0);
