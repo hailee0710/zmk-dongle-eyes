@@ -50,13 +50,9 @@ static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 // 28 a full charge would have been clipped by the label's own box - the same
 // trap that caught the connection indicator.
 #define BAT_LABEL_W 36
-// Both cells sit left of centre so the connection indicator has the right-hand
-// end of this row to itself.
-//
-// Pitch must exceed a cell's own width (BAT_LABEL_W + 4 + BAT_BAR_W = 68) or
-// the cells overlap - which they silently did at 76 against an 80px cell,
-// showing up as the two readouts touching. 92 leaves 24px between them.
-#define BAT_PITCH 92
+// Margin from the panel's own left/right edges for the two corner cells - the
+// same 16px WPM already insets its own top-left corner by.
+#define BAT_MARGIN 16
 
 struct battery_state
 {
@@ -361,9 +357,14 @@ int zmk_widget_dongle_battery_status_init(struct zmk_widget_dongle_battery_statu
 {
     widget->obj = lv_obj_create(parent);
 
-    lv_obj_set_size(widget->obj, 240, 20);
+    // Full panel width (320 on the ST7789P3 this screen drives - see EYES_W in
+    // eyes_status.c), not just enough for one row of cells: the two halves now
+    // anchor to this box's own left and right edges rather than sitting side
+    // by side, so the box has to reach both.
+    lv_obj_set_size(widget->obj, 320, 20);
 
-    for (int i = 0; i < ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT + SOURCE_OFFSET; i++)
+    const int total = ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT + SOURCE_OFFSET;
+    for (int i = 0; i < total; i++)
     {
         lv_obj_t *image_canvas = lv_canvas_create(widget->obj);
         lv_obj_t *battery_label = lv_label_create(widget->obj);
@@ -375,12 +376,37 @@ int zmk_widget_dongle_battery_status_init(struct zmk_widget_dongle_battery_statu
         lv_canvas_set_buffer(image_canvas, battery_image_buffer[i], BAT_BAR_W, BAT_BAR_H,
                              LV_IMG_CF_TRUE_COLOR);
 
-        // Number then bar, both on the same line, one cell per half.
+        // Number then bar, one cell per half, but the cells no longer sit in
+        // a row together - each anchors to its own corner of the box instead.
+        // The first source (the left half, or the dongle itself when
+        // CONFIG_ZMK_DONGLE_DISPLAY_DONGLE_BATTERY adds it ahead of the
+        // halves) goes to the bottom-left corner; the last source (the right
+        // half) goes to the bottom-right. Anything in between - only possible
+        // with that dongle cell enabled, sandwiched between the two halves -
+        // has no corner of its own, so it stays centred; that combination is
+        // untested against real hardware.
         lv_obj_set_style_text_font(battery_label, &Fredoka_SemiBold_20, 0);
         lv_obj_set_width(battery_label, BAT_LABEL_W);
         lv_obj_set_style_text_align(battery_label, LV_TEXT_ALIGN_RIGHT, 0);
-        lv_obj_align(battery_label, LV_ALIGN_LEFT_MID, i * BAT_PITCH, 0);
-        lv_obj_align(image_canvas, LV_ALIGN_LEFT_MID, BAT_LABEL_W + 4 + (i * BAT_PITCH), 0);
+
+        if (i == 0)
+        {
+            lv_obj_align(battery_label, LV_ALIGN_LEFT_MID, BAT_MARGIN, 0);
+            lv_obj_align(image_canvas, LV_ALIGN_LEFT_MID, BAT_MARGIN + BAT_LABEL_W + 4, 0);
+        }
+        else if (i == total - 1)
+        {
+            lv_obj_align(image_canvas, LV_ALIGN_RIGHT_MID, -BAT_MARGIN, 0);
+            lv_obj_align(battery_label, LV_ALIGN_RIGHT_MID, -(BAT_MARGIN + BAT_BAR_W + 4), 0);
+        }
+        else
+        {
+            // Centres the label+gap+canvas pair (BAT_LABEL_W + 4 + BAT_BAR_W
+            // wide) on the box's own mid-line: half that width behind the
+            // label's centre, half in front of the canvas's.
+            lv_obj_align(battery_label, LV_ALIGN_CENTER, -(BAT_BAR_W / 2 + 2), 0);
+            lv_obj_align(image_canvas, LV_ALIGN_CENTER, BAT_LABEL_W / 2 + 2, 0);
+        }
 
         lv_obj_add_flag(image_canvas, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(battery_label, LV_OBJ_FLAG_HIDDEN);

@@ -83,21 +83,23 @@ lv_obj_t *zmk_display_status_screen()
 
 #if CONFIG_DONGLE_SCREEN_BATTERY_ACTIVE
     zmk_widget_dongle_battery_status_init(&dongle_battery_status_widget, screen);
-    // The opposite corner from the output widget, now along the top edge for
-    // the same reason the output widget moved there. The cells only need
-    // about 162px of the 240 the widget's own box reserves, so this has slack
-    // to spare before it reaches the output widget's corner.
-    lv_obj_align(zmk_widget_dongle_battery_status_obj(&dongle_battery_status_widget), LV_ALIGN_TOP_LEFT, 16, 0);
+    // Back along the bottom edge, flush like before, but the widget's own box
+    // now spans the full panel width and anchors each half's cell to its own
+    // corner within it (see BAT_MARGIN in battery_status.c) rather than
+    // sitting side by side - the left half in the bottom-left corner, the
+    // right half in the bottom-right. Flush rather than inset, so the
+    // modifier widget's own +46 offset below still clears it exactly as it
+    // did before the row was ever moved off this edge.
+    lv_obj_align(zmk_widget_dongle_battery_status_obj(&dongle_battery_status_widget), LV_ALIGN_BOTTOM_MID, 0, 0);
 #endif
 
 #if CONFIG_DONGLE_SCREEN_WPM_ACTIVE
     zmk_widget_wpm_status_init(&wpm_status_widget, screen);
-    // Top-left corner, but now stacked below the battery row rather than
-    // above it: both share that corner since the battery widget moved up from
-    // the bottom edge. 12 (the old top inset) put this under the battery
-    // widget's own 20px height, so it grew to 24 - the battery's height plus a
-    // 4px gap - to clear it instead of overlapping the top eight pixels of it.
-    lv_obj_align(zmk_widget_wpm_status_obj(&wpm_status_widget), LV_ALIGN_TOP_LEFT, 16, 24);
+    // Top-left corner. Dialogue now lives centred over the eyes rather than
+    // in a right-hand column (see DIALOGUE_BOTTOM in eyes_status.c), and the
+    // battery row moved back to the bottom edge, so nothing else claims this
+    // corner and the old 12px inset still applies unchanged.
+    lv_obj_align(zmk_widget_wpm_status_obj(&wpm_status_widget), LV_ALIGN_TOP_LEFT, 16, 12);
 #endif
 
 #if CONFIG_DONGLE_SCREEN_LAYER_ACTIVE
@@ -121,13 +123,12 @@ lv_obj_t *zmk_display_status_screen()
 
 #if CONFIG_DONGLE_SCREEN_MODIFIER_ACTIVE
     zmk_widget_mod_status_init(&mod_widget, screen);
-    // +46 grazes the eyes' bottom edge (about y=116) by roughly 4px and stops
-    // well short of the panel's own bottom edge (y=172) - the battery row that
-    // used to bound this from below moved to the top corners, so the only
-    // remaining constraint is the eyes themselves. Left at its old value since
-    // it already clears everything now; this widget is placed for a screen
-    // with a face-shaped hole in the middle of it, and the README says to
-    // turn it off or move it.
+    // There is no offset that clears both neighbours: the eyes reach down to
+    // about y=116 and the battery row starts at y=152, a 36px gap this
+    // widget's own 40px height cannot fit inside. +46 centres it in that gap
+    // anyway, which grazes the eyes' bottom edge by about 4px and just clears
+    // the battery row - this widget is placed for a screen with a face-shaped
+    // hole in the middle of it, and the README says to turn it off or move it.
     lv_obj_align(zmk_widget_mod_status_obj(&mod_widget), LV_ALIGN_CENTER, 0, 46);
 #endif
 

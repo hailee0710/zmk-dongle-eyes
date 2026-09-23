@@ -10,7 +10,7 @@ shows the quietest thing the screen does.
 Most dongle screens are dashboards — layer, modifiers, words per minute, battery, laid out to be
 read at a glance. This one puts a face where the dashboard was. A pair of animated eyes report the
 active layer, strain as your typing speed climbs, and doze off when you stop; short lines of
-dialogue appear beside them; a background layer carries whatever the moment calls for. The
+dialogue appear centred over them; a background layer carries whatever the moment calls for. The
 readouts are still there, just smaller and around the edges.
 
 Underneath it is a Zephyr module for an ST7789P3 172×320 panel on a nice!nano v2, drawn with LVGL,
@@ -74,13 +74,14 @@ different eyes. Quirks are skipped while asleep or typing hard, since neither wo
 
 ### Dialogue
 
-Short lines beside the face, typed out a character at a time, held, then fading as they drift
+Short lines centred over the face, typed out a character at a time, held, then fading as they drift
 upward. Lines are grouped by the event that prompts them — waking, typing, waiting — and one is
 picked at random, so adding a variation is a line in a list.
 
-A remark is written in the bottom slot and pushed up if a second line follows, terminal fashion.
-Each line carries its own black plate sized to its own text, so it reads as a highlight and stays
-legible wherever it crosses the eyes.
+A remark is written in the bottom slot, flush against the bottom edge of the panel, and pushed up
+if a second line follows, terminal fashion. Each line carries its own black plate sized to its own
+text, so it reads as a highlight and stays legible wherever it crosses the eyes or the battery
+readout beneath it.
 
 ### Background
 
@@ -106,19 +107,21 @@ them to atmosphere, and a layer can have one without the other. Both are set in 
 Everything the face is not — the status readouts, around the edges.
 
 > **The layer, mod and WPM widgets are not placed for the face.** Layer lands dead centre
-> underneath the eyes, mod immediately below them, and WPM in the top-left corner, in the band the
-> dialogue writes across for a long remark. Turn them off when running the face, or move them. They
-> are not broken, just positioned for a screen that no longer looks like this.
+> underneath the eyes, mod immediately below them, and WPM in the top-left corner. A long dialogue
+> remark can also cross the battery readout, since both now sit along the bottom edge. Turn them
+> off when running the face, or move them. They are not broken, just positioned for a screen that
+> no longer looks like this.
 
-- **Output** — the live transport only, on one line and in lower case. Drawing the inactive one
-  told you nothing you could not infer and cost a whole row.
+- **Output** — the live transport only, on one line and in lower case, in the top-right corner.
+  Drawing the inactive one told you nothing you could not infer and cost a whole row.
   - **usb** — white when USB HID is ready and active; red when the dongle has power but no host,
     as on a wall plug or a battery pack.
   - **ble** — the selected profile number follows on the same line. Green connected, blue bonded
     but not currently connected, white for a free profile.
 
-- **Battery** — a battery icon with the figure beside it, one cell per half on a single row. Grey
-  `x` when a half is not reporting, red at or below 10%, yellow at or below 20%, white above.
+- **Battery** — a battery icon with the figure beside it, one cell per half, anchored to the
+  bottom-left and bottom-right corners rather than sharing a row. Grey `x` when a half is not
+  reporting, red at or below 10%, yellow at or below 20%, white above.
 
 - **Layer** — the active layer as text. Redundant alongside the eyes, which report it themselves.
 
@@ -329,10 +332,11 @@ what sells it — but neither needs the other.
 timings, thresholds, sizes and colours. The dialogue lines are three lists in `eyes_status.c`. The
 layer mapping is the exception and lives in Kconfig, above.
 
-One constraint worth knowing before writing dialogue: a line has the width of the eyes' box less the
-margin it hangs from — about 300px on the 320px-wide panel, a little under thirty lowercase
-characters — before it is clipped. Punctuation is fine, but the font has **no uppercase** — a
-capital renders as nothing at all, silently. See [Licensing](#licensing) to widen it.
+One constraint worth knowing before writing dialogue: a line is centred on the eyes' own box, so it
+has that box's full width to grow into either side before it is clipped — about 320px on the
+320px-wide panel, a little over thirty lowercase characters. Punctuation is fine, but the font has
+**no uppercase** — a capital renders as nothing at all, silently. See [Licensing](#licensing) to
+widen it.
 
 A remark is two lines at most, and those two have to fit between the top of the panel and the top of
 the eyes: about 54px, which two lines of the 20px font fill exactly. Nothing on screen tells you when

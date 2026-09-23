@@ -51,15 +51,15 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // The box is the whole panel: 320x172 on the ST7789P3 this screen now drives.
 // Children are clipped to their parent's box, so the box has to hold the
 // eyes, the dialogue and the z's between them, and the dialogue is
-// right-anchored to it - so its width is also what fixes how far from the
-// panel's right edge a remark starts.
+// centre-anchored to it - so its width is also what a remark is centred
+// against.
 //
 // The eyes are centred in it, which on a box this size puts them at the
 // panel's vertical middle rather than in a lower band the way the 240px-tall
 // panel's box used to: that box was taller than its screen on purpose, to
 // carve out empty space above the eyes for the dialogue to live in. This one
-// is the screen exactly, and the dialogue lives beside the eyes instead - see
-// DIALOGUE_RIGHT.
+// is the screen exactly, and the dialogue now sits over the eyes rather than
+// beside them - see DIALOGUE_BOTTOM.
 #define EYES_W 320
 #define EYES_H 172
 
@@ -245,30 +245,30 @@ static const char *const DIALOGUE_NAG[] = {
 // Dialogue: everything the buddy says beside its face - the sleep z's, the
 // typing "!", and whatever comes later.
 //
-// Anchored to the top right of the widget rather than at an offset from its
-// centre, so a longer line grows leftward into empty space instead of across
-// the eyes. On the 320x172 panel that empty space is a real side column - the
-// eyes sit within about x=85..235, leaving the right third of the panel free
-// top to bottom - rather than only the band above the face the 240px-tall
-// panel had room for. A plate still crosses the eyes for a long line, and
-// still stays legible there: nothing about that changed, this only changes
-// where the block sits when it isn't crossing them.
+// Anchored to the top middle of the widget rather than to an edge, so a
+// remark is centred over the panel regardless of its length - LVGL keeps a
+// LV_SIZE_CONTENT label's stored alignment resolved as its width changes, so
+// this stays centred as characters are revealed rather than needing to be
+// re-aligned on every step. A plate still crosses the eyes for a long line,
+// and stays legible there the same way it always has.
 //
 // It is otherwise independent of the face. Dialogue is not an expression and
 // does not answer to one: an expression changing no longer clears it, and each
 // piece is responsible for its own lifetime.
-#define DIALOGUE_RIGHT 4
 
 // Dialogue grows upward from a fixed baseline: the last line always lands here
 // and earlier ones stack above it. Its final line sits in the same place
 // whether a remark is one line or two.
 //
-// Flush to the bottom of the box rather than centred: the battery and output
-// widgets moved off the panel's bottom edge and up to its top corners, freeing
-// the bottom for dialogue instead. EYES_H(172) less a 4px margin - the same
-// inset DIALOGUE_RIGHT uses on the other axis - puts the block's own bottom
-// edge at 168. Two lines plus the 10px rise cost 2*23+10=56px, well inside the
-// 168px of column above that.
+// Flush to the bottom of the box rather than centred, now that the output
+// widget has moved off the panel's bottom edge and freed the space above it.
+// EYES_H(172) less a 4px margin puts the block's own bottom edge at 168. Two
+// lines plus the 10px rise cost 2*23+10=56px, well inside the 168px of column
+// above that.
+//
+// The battery row still sits flush along this same edge - a long remark can
+// cross it there the same way one can cross the eyes; see the battery-widget
+// note in custom_status_screen.c.
 #define DIALOGUE_BOTTOM 168
 
 // Squeezing is an effort, so it pulses rather than sitting still. STRAIN_MIN
@@ -1762,18 +1762,18 @@ static void init_dialogue(struct zmk_widget_eyes_status *widget) {
         lv_obj_set_style_pad_ver(o, DIALOGUE_PAD_V, LV_PART_MAIN);
         lv_obj_set_width(o, LV_SIZE_CONTENT);
 
-        // Right edges flush to a common margin, so lines stack against it and
-        // each grows leftward into empty space. The vertical offset is set per
-        // remark, since it depends on how many lines that remark has.
-        lv_obj_align(o, LV_ALIGN_TOP_RIGHT, -DIALOGUE_RIGHT, dialogue_line_y(i));
+        // Centred on the panel's own mid-line, so a remark reads as centred
+        // regardless of its length. The vertical offset is set per remark,
+        // since it depends on how many lines that remark has.
+        lv_obj_align(o, LV_ALIGN_TOP_MID, 0, dialogue_line_y(i));
         lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
 static void init_zzz(struct zmk_widget_eyes_status *widget) {
-    // Offsets up and to the right of the bottom slot, the same place a one-line
-    // remark is typed. The first z sits on that baseline and the others climb
-    // away from it, staggered so they read as a sequence rather than a pulse.
+    // Offset from the same centred anchor a one-line remark is typed at. The
+    // first z sits on that baseline and the others climb up and to the right
+    // of it, staggered so they read as a sequence rather than a pulse.
     static const int16_t zx[3] = {-26, -13, 0};
     static const int16_t zy[3] = {0, 7, 14};
 
@@ -1793,7 +1793,7 @@ static void init_zzz(struct zmk_widget_eyes_status *widget) {
         lv_obj_set_style_bg_opa(widget->zzz[i], LV_OPA_COVER, LV_PART_MAIN);
         lv_obj_set_style_pad_hor(widget->zzz[i], DIALOGUE_PAD_H, LV_PART_MAIN);
         lv_obj_set_style_pad_ver(widget->zzz[i], DIALOGUE_PAD_V, LV_PART_MAIN);
-        lv_obj_align(widget->zzz[i], LV_ALIGN_TOP_RIGHT, -DIALOGUE_RIGHT + zx[i], base);
+        lv_obj_align(widget->zzz[i], LV_ALIGN_TOP_MID, zx[i], base);
         lv_obj_add_flag(widget->zzz[i], LV_OBJ_FLAG_HIDDEN);
 
         const uint32_t delay = i * (ZZZ_CYCLE_MS / 3);

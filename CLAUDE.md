@@ -249,9 +249,9 @@ failure is something else.
   uppercase character renders as *nothing at all* — no error, no warning. Every label must be
   lowercase. Widen the range and regenerate rather than wondering where the text went; the
   `lv_font_conv` commands are in the README's Licensing section.
-- Dialogue is clipped past the eyes' box width less its right margin — about 300px on the current
-  320px-wide panel, a little under thirty lowercase characters. Line breaks are written into the
-  strings by hand, not wrapped; a third line is dropped (`DIALOGUE_MAX_LINES`).
+- Dialogue is centred on the eyes' box and clipped past its full width — about 320px on the
+  current 320px-wide panel, a little over thirty lowercase characters. Line breaks are written
+  into the strings by hand, not wrapped; a third line is dropped (`DIALOGUE_MAX_LINES`).
 - **Layer mapping lives in Kconfig, not source, and defaults to none** — layer indices mean whatever
   your keymap says. Layer 0 is never read (base-layer behaviour is activity-driven) and layers past
   7 are unmapped.
