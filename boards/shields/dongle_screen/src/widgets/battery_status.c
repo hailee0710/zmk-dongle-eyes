@@ -376,9 +376,10 @@ int zmk_widget_dongle_battery_status_init(struct zmk_widget_dongle_battery_statu
         lv_canvas_set_buffer(image_canvas, battery_image_buffer[i], BAT_BAR_W, BAT_BAR_H,
                              LV_IMG_CF_TRUE_COLOR);
 
-        // Number then bar, one cell per half, but the cells no longer sit in
-        // a row together - each anchors to its own corner of the box instead.
-        // The first source (the left half, or the dongle itself when
+        // One cell per half, but the cells no longer sit in a row together -
+        // each anchors to its own corner of the box instead, icon flush
+        // against the corner and number toward the middle. The first source
+        // (the left half, or the dongle itself when
         // CONFIG_ZMK_DONGLE_DISPLAY_DONGLE_BATTERY adds it ahead of the
         // halves) goes to the bottom-left corner; the last source (the right
         // half) goes to the bottom-right. Anything in between - only possible
@@ -391,11 +392,17 @@ int zmk_widget_dongle_battery_status_init(struct zmk_widget_dongle_battery_statu
 
         if (i == 0)
         {
-            lv_obj_align(battery_label, LV_ALIGN_LEFT_MID, BAT_MARGIN, 0);
-            lv_obj_align(image_canvas, LV_ALIGN_LEFT_MID, BAT_MARGIN + BAT_LABEL_W + 4, 0);
+            // Icon flush against the left corner, number to its right - the
+            // icon leads rather than trails the way it did in the old
+            // single-row layout, so it sits at the panel's own edge instead
+            // of a BAT_LABEL_W+4 gap in from it.
+            lv_obj_align(image_canvas, LV_ALIGN_LEFT_MID, BAT_MARGIN, 0);
+            lv_obj_align(battery_label, LV_ALIGN_LEFT_MID, BAT_MARGIN + BAT_BAR_W + 4, 0);
         }
         else if (i == total - 1)
         {
+            // Mirrored: icon flush against the right corner, number toward
+            // the middle.
             lv_obj_align(image_canvas, LV_ALIGN_RIGHT_MID, -BAT_MARGIN, 0);
             lv_obj_align(battery_label, LV_ALIGN_RIGHT_MID, -(BAT_MARGIN + BAT_BAR_W + 4), 0);
         }

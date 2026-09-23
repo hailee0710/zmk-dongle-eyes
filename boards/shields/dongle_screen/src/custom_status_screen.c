@@ -95,11 +95,11 @@ lv_obj_t *zmk_display_status_screen()
 
 #if CONFIG_DONGLE_SCREEN_WPM_ACTIVE
     zmk_widget_wpm_status_init(&wpm_status_widget, screen);
-    // Top-left corner. Dialogue now lives centred over the eyes rather than
-    // in a right-hand column (see DIALOGUE_BOTTOM in eyes_status.c), and the
-    // battery row moved back to the bottom edge, so nothing else claims this
-    // corner and the old 12px inset still applies unchanged.
-    lv_obj_align(zmk_widget_wpm_status_obj(&wpm_status_widget), LV_ALIGN_TOP_LEFT, 16, 12);
+    // Top-left corner, at the same 4px top inset as the output widget's own
+    // top-right placement above - both labels are Fredoka_SemiBold_20 now
+    // (see wpm_status.c), so matching insets is enough to put the wpm number
+    // and the connection text on the same line without a per-widget fudge.
+    lv_obj_align(zmk_widget_wpm_status_obj(&wpm_status_widget), LV_ALIGN_TOP_LEFT, 16, 4);
 #endif
 
 #if CONFIG_DONGLE_SCREEN_LAYER_ACTIVE

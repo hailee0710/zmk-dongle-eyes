@@ -58,6 +58,13 @@ int zmk_widget_wpm_status_init(struct zmk_widget_wpm_status *widget, lv_obj_t *p
     lv_obj_set_size(widget->obj, 240, 77);
 
     widget->wpm_label = lv_label_create(widget->obj);
+    // Fredoka_SemiBold_20, not the LVGL default this used to fall back to
+    // (global_style's own font line is disabled - see the ToDo beside it in
+    // custom_status_screen.c): every other text on screen already uses this
+    // font, and matching it is what lets the top-left number and the
+    // top-right connection text share the same line height and sit flush at
+    // the same y once their containers carry the same top inset.
+    lv_obj_set_style_text_font(widget->wpm_label, &Fredoka_SemiBold_20, 0);
     lv_obj_align(widget->wpm_label, LV_ALIGN_TOP_LEFT, 0, 0);
 
     // Only here as a sample
