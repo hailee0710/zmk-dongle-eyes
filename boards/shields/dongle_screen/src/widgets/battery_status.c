@@ -398,6 +398,12 @@ int zmk_widget_dongle_battery_status_init(struct zmk_widget_dongle_battery_statu
             // of a BAT_LABEL_W+4 gap in from it.
             lv_obj_align(image_canvas, LV_ALIGN_LEFT_MID, BAT_MARGIN, 0);
             lv_obj_align(battery_label, LV_ALIGN_LEFT_MID, BAT_MARGIN + BAT_BAR_W + 4, 0);
+            // Left-aligned, not the RIGHT set above: right-aligning inside
+            // BAT_LABEL_W's fixed width pushed short numbers to the far end
+            // of the label's own box, away from the icon rather than beside
+            // it - that alignment only hugged the icon in the old order,
+            // where the label's box came before the icon instead of after it.
+            lv_obj_set_style_text_align(battery_label, LV_TEXT_ALIGN_LEFT, 0);
         }
         else if (i == total - 1)
         {
