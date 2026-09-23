@@ -263,15 +263,13 @@ static const char *const DIALOGUE_NAG[] = {
 // and earlier ones stack above it. Its final line sits in the same place
 // whether a remark is one line or two.
 //
-// Centred in the panel's height rather than pinned to the top: the eyes moved
-// from a 220px box that reached above the screen's own top edge to one that
-// is exactly the panel, so the tight clearance above them that used to size
-// this (54, chosen to just clear the eye top with the fade's rise folded in)
-// no longer applies - the whole 172px column is free, since a plate crossing
-// the eyes was always fine. Two lines plus the 10px rise need 54px; centring
-// that in 172 puts the top of the block at (172-54)/2, rounded to keep the
-// arithmetic simple.
-#define DIALOGUE_BOTTOM 100
+// Flush to the bottom of the box rather than centred: the battery and output
+// widgets moved off the panel's bottom edge and up to its top corners, freeing
+// the bottom for dialogue instead. EYES_H(172) less a 4px margin - the same
+// inset DIALOGUE_RIGHT uses on the other axis - puts the block's own bottom
+// edge at 168. Two lines plus the 10px rise cost 2*23+10=56px, well inside the
+// 168px of column above that.
+#define DIALOGUE_BOTTOM 168
 
 // Squeezing is an effort, so it pulses rather than sitting still. STRAIN_MIN
 // is how far shut it gets at the bottom of the pulse, out of OPEN_FULL - a

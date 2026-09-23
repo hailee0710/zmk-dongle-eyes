@@ -73,29 +73,31 @@ lv_obj_t *zmk_display_status_screen()
 
 #if CONFIG_DONGLE_SCREEN_OUTPUT_ACTIVE
     zmk_widget_output_status_init(&output_status_widget, screen);
-    // Its own bottom corner rather than sharing a row with the batteries: the
-    // panel gained 40px of width, which is enough to give the two their own
-    // corners instead of splitting one row between them. Pulled in from the
-    // edge so the case lip doesn't clip the profile number.
-    lv_obj_align(zmk_widget_output_status_obj(&output_status_widget), LV_ALIGN_BOTTOM_RIGHT, -8, -4);
+    // Moved from the bottom-right corner to the top-right: dialogue now sits
+    // flush against the bottom of the eyes' own box (see DIALOGUE_BOTTOM in
+    // eyes_status.c), so the battery+output row moved up to keep clear of it.
+    // Pulled in from the edge so the case lip doesn't clip the profile number;
+    // pulled down instead of up to mirror that same inset off the top edge.
+    lv_obj_align(zmk_widget_output_status_obj(&output_status_widget), LV_ALIGN_TOP_RIGHT, -8, 4);
 #endif
 
 #if CONFIG_DONGLE_SCREEN_BATTERY_ACTIVE
     zmk_widget_dongle_battery_status_init(&dongle_battery_status_widget, screen);
-    // The opposite corner from the output widget now that the two no longer
-    // share a row. The cells only need about 162px of the 240 the widget's own
-    // box reserves, so this has slack to spare before it reaches the output
-    // widget's corner.
-    lv_obj_align(zmk_widget_dongle_battery_status_obj(&dongle_battery_status_widget), LV_ALIGN_BOTTOM_LEFT, 16, 0);
+    // The opposite corner from the output widget, now along the top edge for
+    // the same reason the output widget moved there. The cells only need
+    // about 162px of the 240 the widget's own box reserves, so this has slack
+    // to spare before it reaches the output widget's corner.
+    lv_obj_align(zmk_widget_dongle_battery_status_obj(&dongle_battery_status_widget), LV_ALIGN_TOP_LEFT, 16, 0);
 #endif
 
 #if CONFIG_DONGLE_SCREEN_WPM_ACTIVE
     zmk_widget_wpm_status_init(&wpm_status_widget, screen);
-    // Top-left corner. Dialogue now lives in the right-hand column rather than
-    // a band across the top of the panel (see DIALOGUE_BOTTOM in
-    // eyes_status.c), so this no longer sits under a remark the way it did on
-    // the 240px panel.
-    lv_obj_align(zmk_widget_wpm_status_obj(&wpm_status_widget), LV_ALIGN_TOP_LEFT, 16, 12);
+    // Top-left corner, but now stacked below the battery row rather than
+    // above it: both share that corner since the battery widget moved up from
+    // the bottom edge. 12 (the old top inset) put this under the battery
+    // widget's own 20px height, so it grew to 24 - the battery's height plus a
+    // 4px gap - to clear it instead of overlapping the top eight pixels of it.
+    lv_obj_align(zmk_widget_wpm_status_obj(&wpm_status_widget), LV_ALIGN_TOP_LEFT, 16, 24);
 #endif
 
 #if CONFIG_DONGLE_SCREEN_LAYER_ACTIVE
@@ -119,12 +121,13 @@ lv_obj_t *zmk_display_status_screen()
 
 #if CONFIG_DONGLE_SCREEN_MODIFIER_ACTIVE
     zmk_widget_mod_status_init(&mod_widget, screen);
-    // There is no offset that clears both neighbours: the eyes reach down to
-    // about y=116 and the battery row starts at y=152, a 36px gap this
-    // widget's own 40px height cannot fit inside. +46 centres it in that gap
-    // anyway, which grazes the eyes' bottom edge by about 4px and just clears
-    // the battery row - this widget is placed for a screen with a face-shaped
-    // hole in the middle of it, and the README says to turn it off or move it.
+    // +46 grazes the eyes' bottom edge (about y=116) by roughly 4px and stops
+    // well short of the panel's own bottom edge (y=172) - the battery row that
+    // used to bound this from below moved to the top corners, so the only
+    // remaining constraint is the eyes themselves. Left at its old value since
+    // it already clears everything now; this widget is placed for a screen
+    // with a face-shaped hole in the middle of it, and the README says to
+    // turn it off or move it.
     lv_obj_align(zmk_widget_mod_status_obj(&mod_widget), LV_ALIGN_CENTER, 0, 46);
 #endif
 
