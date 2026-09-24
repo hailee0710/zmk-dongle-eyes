@@ -73,11 +73,15 @@ lv_obj_t *zmk_display_status_screen()
 
 #if CONFIG_DONGLE_SCREEN_OUTPUT_ACTIVE
     zmk_widget_output_status_init(&output_status_widget, screen);
-    // Moved from the bottom-right corner to the top-right: dialogue now sits
-    // flush against the bottom of the eyes' own box (see DIALOGUE_BOTTOM in
-    // eyes_status.c), so the battery+output row moved up to keep clear of it.
-    // Pulled in from the edge so the case lip doesn't clip the profile number;
-    // pulled down instead of up to mirror that same inset off the top edge.
+    // Top-right corner, 4px down from the top edge - the same inset the wpm
+    // widget uses on its own corner (see wpm_status.c), which is what lets
+    // the two labels share a line. Originally moved here from the
+    // bottom-right to stay clear of dialogue, back when a remark sat flush
+    // against the panel's bottom edge; dialogue has since moved to dead
+    // centre and hides the eyes for as long as it's showing (see
+    // DIALOGUE_CENTER_Y in eyes_status.c), so nothing forces this corner any
+    // more, but there is no reason to move it back either. Pulled in from the
+    // edge so the case lip doesn't clip the profile number.
     lv_obj_align(zmk_widget_output_status_obj(&output_status_widget), LV_ALIGN_TOP_RIGHT, -8, 4);
 #endif
 

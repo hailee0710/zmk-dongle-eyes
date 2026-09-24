@@ -10,7 +10,8 @@ shows the quietest thing the screen does.
 Most dongle screens are dashboards — layer, modifiers, words per minute, battery, laid out to be
 read at a glance. This one puts a face where the dashboard was. A pair of animated eyes report the
 active layer, strain as your typing speed climbs, and doze off when you stop; short lines of
-dialogue appear centred over them; a background layer carries whatever the moment calls for. The
+dialogue take the middle of the screen, hiding the eyes for as long as they're showing; a background
+layer carries whatever the moment calls for. The
 readouts are still there, just smaller and around the edges.
 
 Underneath it is a Zephyr module for an ST7789P3 172×320 panel on a nice!nano v2, drawn with LVGL,
@@ -63,9 +64,9 @@ for the resting face on their own.
 
 Off the base layer the expression reports the active layer, for whichever layers you map one to —
 see [Layer mapping](#layer-mapping). On the base layer, and on any layer left unmapped, the eyes
-follow activity and typing speed instead: sleepy when ZMK reports idle, with sleep z's after a further
-20s; a strained squeeze past 57wpm; and dizzy spirals past 87. Every threshold releases well below
-where it triggers, since ZMK's WPM estimate bounces.
+follow activity and typing speed instead: sleepy when ZMK reports idle, with sleep z's climbing above
+the eyes after a further 20s; a strained squeeze past 57wpm; and dizzy spirals past 87. Every
+threshold releases well below where it triggers, since ZMK's WPM estimate bounces.
 
 The resting face is not static. It blinks, glances around, and every 40–90s stands in a **quirk** —
 a wink, a flat-sliced look downward, a small circle, a squint, a lidded stare, or a startle. Most
@@ -74,14 +75,18 @@ different eyes. Quirks are skipped while asleep or typing hard, since neither wo
 
 ### Dialogue
 
-Short lines centred over the face, typed out a character at a time, held, then fading as they drift
-upward. Lines are grouped by the event that prompts them — waking, typing, waiting — and one is
-picked at random, so adding a variation is a line in a list.
+Short lines dead centre of the panel, typed out a character at a time, held, then fading as they
+drift upward. Lines are grouped by the event that prompts them — waking, typing, waiting — and one
+is picked at random, so adding a variation is a line in a list.
 
-A remark is written in the bottom slot, flush against the bottom edge of the panel, and pushed up
-if a second line follows, terminal fashion. Each line carries its own black plate sized to its own
-text, so it reads as a highlight and stays legible wherever it crosses the eyes or the battery
-readout beneath it.
+The eyes hide for as long as a remark is showing, rather than sharing the middle of the screen with
+it - a line sits where the eyes normally would, not beside or across them. They come back once the
+remark has fully faded. The sleep z's are not part of this: they stay up beside the eyes throughout
+a sleep, unaffected by whatever else is being said.
+
+A remark is written in the bottom slot and pushed up if a second line follows, terminal fashion, the
+whole block staying centred on the panel whether it is one line or two. Each line carries its own
+black plate sized to its own text, so it reads as a highlight.
 
 ### Background
 
@@ -107,10 +112,9 @@ them to atmosphere, and a layer can have one without the other. Both are set in 
 Everything the face is not — the status readouts, around the edges.
 
 > **The layer, mod and WPM widgets are not placed for the face.** Layer lands dead centre
-> underneath the eyes, mod immediately below them, and WPM in the top-left corner. A long dialogue
-> remark can also cross the battery readout, since both now sit along the bottom edge. Turn them
-> off when running the face, or move them. They are not broken, just positioned for a screen that
-> no longer looks like this.
+> underneath the eyes, mod immediately below them, and WPM in the top-left corner. Turn them off
+> when running the face, or move them. They are not broken, just positioned for a screen that no
+> longer looks like this.
 
 - **Output** — the live transport only, on one line and in lower case, in the top-right corner.
   Drawing the inactive one told you nothing you could not infer and cost a whole row.
@@ -338,9 +342,11 @@ has that box's full width to grow into either side before it is clipped — abou
 **no uppercase** — a capital renders as nothing at all, silently. See [Licensing](#licensing) to
 widen it.
 
-A remark is two lines at most, and those two have to fit between the top of the panel and the top of
-the eyes: about 54px, which two lines of the 20px font fill exactly. Nothing on screen tells you when
-a line has outgrown either limit, so measure a long one rather than counting on the estimate.
+A remark is two lines at most (`DIALOGUE_MAX_LINES`); a third is silently dropped rather than shown.
+The block is centred vertically on the panel regardless of whether it currently holds one line or
+two, with comfortable room either side, so there is no tight pixel budget to fit inside the way the
+width has. Nothing on screen tells you when a line has outgrown its width limit, so measure a long
+one rather than counting on the estimate.
 
 
 ### Configuration options

@@ -58,8 +58,9 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 // panel's vertical middle rather than in a lower band the way the 240px-tall
 // panel's box used to: that box was taller than its screen on purpose, to
 // carve out empty space above the eyes for the dialogue to live in. This one
-// is the screen exactly, and the dialogue now sits over the eyes rather than
-// beside them - see DIALOGUE_BOTTOM.
+// is the screen exactly, so dialogue now takes the eyes' own dead-centre spot
+// instead - and hides them for as long as it's showing there, rather than
+// overlapping them - see DIALOGUE_CENTER_Y.
 #define EYES_W 320
 #define EYES_H 172
 
@@ -245,31 +246,26 @@ static const char *const DIALOGUE_NAG[] = {
 // Dialogue: everything the buddy says beside its face - the sleep z's, the
 // typing "!", and whatever comes later.
 //
-// Anchored to the top middle of the widget rather than to an edge, so a
+// Anchored to the horizontal middle of the widget rather than to an edge, so a
 // remark is centred over the panel regardless of its length - LVGL keeps a
 // LV_SIZE_CONTENT label's stored alignment resolved as its width changes, so
 // this stays centred as characters are revealed rather than needing to be
-// re-aligned on every step. A plate still crosses the eyes for a long line,
-// and stays legible there the same way it always has.
+// re-aligned on every step.
+//
+// Dead centre of the screen on the vertical axis too, not just anchored to an
+// edge - see DIALOGUE_CENTER_Y and dialogue_line_y(). The eyes are hidden for
+// as long as a remark is showing (the fb_img calls in say() and
+// dialogue_done()) precisely so a line can sit in the middle of the panel
+// without reading as crossing them.
 //
 // It is otherwise independent of the face. Dialogue is not an expression and
 // does not answer to one: an expression changing no longer clears it, and each
 // piece is responsible for its own lifetime.
 
-// Dialogue grows upward from a fixed baseline: the last line always lands here
-// and earlier ones stack above it. Its final line sits in the same place
-// whether a remark is one line or two.
-//
-// Flush to the bottom of the box rather than centred, now that the output
-// widget has moved off the panel's bottom edge and freed the space above it.
-// EYES_H(172) less a 4px margin puts the block's own bottom edge at 168. Two
-// lines plus the 10px rise cost 2*23+10=56px, well inside the 168px of column
-// above that.
-//
-// The battery row still sits flush along this same edge - a long remark can
-// cross it there the same way one can cross the eyes; see the battery-widget
-// note in custom_status_screen.c.
-#define DIALOGUE_BOTTOM 168
+// The panel's own vertical middle. A remark's block - however many lines it
+// currently has - is centred on this, not anchored to either edge, so it sits
+// in the same dead-centre spot whether it is one line or two.
+#define DIALOGUE_CENTER_Y (EYES_H / 2)
 
 // Squeezing is an effort, so it pulses rather than sitting still. STRAIN_MIN
 // is how far shut it gets at the bottom of the pulse, out of OPEN_FULL - a
@@ -333,11 +329,10 @@ static const char *const DIALOGUE_NAG[] = {
 // already. Kept short so that rise plus that stagger does not carry the
 // topmost one above y=0, where it would simply be clipped away - see ZZZ_TOP.
 #define ZZZ_RISE 12
-// Flush to the top of the box, mirroring how DIALOGUE_BOTTOM sits flush to
-// the bottom: the eyes' sleep z's and a waking/typing remark are independent
-// now (see the dialogue comment above), so this needs its own anchor rather
-// than sharing the dialogue's. 30 leaves the same 4px margin at full rise and
-// stagger as DIALOGUE_BOTTOM leaves at the other edge: the topmost z (zy=14)
+// Flush to the top of the box, unlike dialogue proper - which now hides the
+// eyes and sits dead centre while it's showing (see DIALOGUE_CENTER_Y) - since
+// the z's stay up with the eyes throughout a sleep rather than replacing them.
+// 30 leaves a 4px margin at full rise and stagger: the topmost z (zy=14)
 // climbs ZZZ_RISE(12) further, landing at 30-14-12=4.
 #define ZZZ_TOP 30
 
@@ -1260,6 +1255,10 @@ static void dialogue_done(lv_anim_t *a) {
     for (int i = 0; i < DIALOGUE_MAX_LINES; i++) {
         lv_obj_add_flag(widget->dialogue[i], LV_OBJ_FLAG_HIDDEN);
     }
+    // The other half of the hide in say(): the remark has finished fading, so
+    // the eyes come back. The z's were never touched by either end of this -
+    // they keep showing with the eyes throughout, sleepy or not.
+    lv_obj_clear_flag(widget->fb_img, LV_OBJ_FLAG_HIDDEN);
 }
 
 // Rank of the line currently being spoken. Only meaningful while its animation
@@ -1281,8 +1280,17 @@ static int16_t dialogue_line_h;
 // first rises out of the way and the second is typed where it was.
 static int dialogue_active;
 
+// The bottom edge a remark's block hangs from - computed, not fixed, so a
+// one-line remark and a two-line one are each centred on DIALOGUE_CENTER_Y in
+// turn rather than sharing a baseline that would centre the taller one and
+// leave the shorter one sitting above middle.
+static int16_t dialogue_block_bottom(void) {
+    const int16_t block_h = (int16_t)((dialogue_active + 1) * dialogue_line_h);
+    return (int16_t)(DIALOGUE_CENTER_Y + block_h / 2);
+}
+
 static int16_t dialogue_line_y(int i) {
-    return (int16_t)(DIALOGUE_BOTTOM - (dialogue_active - i + 1) * dialogue_line_h);
+    return (int16_t)(dialogue_block_bottom() - (dialogue_active - i + 1) * dialogue_line_h);
 }
 
 // Lifts every line together on the way out. A separate callback from the fade
@@ -1359,8 +1367,11 @@ static void dialogue_reveal_cb(void *var, int32_t shown) {
 // callback is the only thing that has to run, and speaking again simply
 // replaces it rather than stacking.
 //
-// Nothing external takes it down. Dialogue is independent of the face, so a
-// line runs its course whatever the eyes do in the meantime.
+// Nothing external takes it down - an expression change does not interrupt a
+// remark already running. The coupling runs the other way instead: the eyes
+// hide for as long as this remark is on screen (see the fb_img call below and
+// its counterpart in dialogue_done()), since the remark now sits dead centre
+// where the eyes would otherwise be, not beside them.
 static void say(struct zmk_widget_eyes_status *widget, const char *text, uint8_t prio) {
     // An animation still running means a remark is still being spoken.
     if (lv_anim_get(widget, dialogue_fade_cb) != NULL && prio < dialogue_prio) {
@@ -1371,6 +1382,11 @@ static void say(struct zmk_widget_eyes_status *widget, const char *text, uint8_t
     lv_anim_del(widget, dialogue_fade_cb);
     lv_anim_del(widget, dialogue_reveal_cb);
     lv_anim_del(widget, dialogue_rise_cb);
+
+    // Hidden rather than deleted or paused: apply_geometry() keeps running on
+    // its own redraw timer regardless, and hiding is the cheap way to keep its
+    // output off screen without teaching it about dialogue at all.
+    lv_obj_add_flag(widget->fb_img, LV_OBJ_FLAG_HIDDEN);
 
     dialogue_text = text;
 
@@ -1853,9 +1869,10 @@ int zmk_widget_eyes_status_init(struct zmk_widget_eyes_status *widget, lv_obj_t 
     lv_obj_clear_flag(widget->obj, LV_OBJ_FLAG_SCROLLABLE);
 
     // widget->obj stays the full panel box - dialogue and the z's are still
-    // positioned against EYES_W/EYES_H/DIALOGUE_BOTTOM within it, unchanged.
-    // Only the eyes themselves moved, into the smaller framebuffer this
-    // creates and centres inside that box.
+    // positioned against EYES_W/EYES_H within it, unchanged. Only the eyes
+    // themselves moved, into the smaller framebuffer this creates and centres
+    // inside that box - and get hidden/shown by say()/dialogue_done() rather
+    // than by anything here.
     widget->fb_img = display_fb_init(widget->obj);
     lv_obj_align(widget->fb_img, LV_ALIGN_CENTER, 0, 0);
 

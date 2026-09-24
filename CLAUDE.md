@@ -272,9 +272,14 @@ failure is something else.
 - **The eyes' box (`EYES_W`/`EYES_H`) is the panel, exactly** — the widget is placed flush and
   unshifted in `custom_status_screen.c`. Everything the widget draws, including the dialogue and the
   sleep z's, has to fit inside that box; there is no slack above or below it the way the old 240px
-  panel's taller-than-the-screen box had. `DIALOGUE_BOTTOM` in `eyes_status.c` positions the dialogue
-  column and `ZZZ_TOP` positions the sleep z's independently of it - both are the constants to retune
-  if the box size changes again.
+  panel's taller-than-the-screen box had. `DIALOGUE_CENTER_Y` in `eyes_status.c` centres dialogue on
+  the box regardless of size, and `ZZZ_TOP` positions the sleep z's independently of it - both are the
+  constants to retune if the box size changes again.
+- **Dialogue hides the eyes while it's showing, not the other way round.** `say()` hides `fb_img`
+  (the eyes' framebuffer image) the moment a remark starts, and `dialogue_done()` shows it again once
+  the remark has fully faded; the sleep z's are untouched by either, since they aren't part of
+  dialogue proper and stay visible alongside the eyes throughout a sleep. There is no coupling in the
+  other direction - an expression change never interrupts a remark already running.
 
 ## Style
 
