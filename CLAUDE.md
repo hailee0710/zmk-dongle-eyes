@@ -272,8 +272,9 @@ failure is something else.
 - **The eyes' box (`EYES_W`/`EYES_H`) is the panel, exactly** — the widget is placed flush and
   unshifted in `custom_status_screen.c`. Everything the widget draws, including the dialogue and the
   sleep z's, has to fit inside that box; there is no slack above or below it the way the old 240px
-  panel's taller-than-the-screen box had. `DIALOGUE_BOTTOM` in `eyes_status.c` is what positions the
-  dialogue column and is the constant to retune if the box size changes again.
+  panel's taller-than-the-screen box had. `DIALOGUE_BOTTOM` in `eyes_status.c` positions the dialogue
+  column and `ZZZ_TOP` positions the sleep z's independently of it - both are the constants to retune
+  if the box size changes again.
 
 ## Style
 

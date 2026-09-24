@@ -316,11 +316,30 @@ static const char *const DIALOGUE_NAG[] = {
 // ZMK only reports ACTIVE and IDLE here (ZMK_SLEEP is off), so the deeper
 // "actually asleep" stage is timed locally.
 #define ZZZ_DELAY_MS 20000
-#define ZZZ_CYCLE_MS 1800
-// The z's climb from the bottom slot, so the highest of them starts a line and
-// a bit above the baseline. Kept short so that rise does not carry it past the
-// top of the screen, where it would simply be clipped away.
+
+// A plain up/down fade had no hold at the top - opacity peaked at LV_OPA_COVER
+// for a single instant before falling straight back to transparent, the same
+// shape dialogue's own reveal/fade would have if it skipped DIALOGUE_HOLD_MS.
+// That read as a flash rather than a "z", gone before it could be read.
+// ZZZ_FADE_MS matches DIALOGUE_FADE_MS's own value; ZZZ_HOLD_MS is shorter
+// than DIALOGUE_HOLD_MS since a single "z" needs less time to register than a
+// line of text does.
+#define ZZZ_FADE_MS 400
+#define ZZZ_HOLD_MS 1000
+// The full appear-hold-fade cycle each z runs before the next one is staggered
+// in behind it - see the stagger delay in init_zzz().
+#define ZZZ_CYCLE_MS (2 * ZZZ_FADE_MS + ZZZ_HOLD_MS)
+// The z's climb from ZZZ_TOP, so the highest of them starts a little above it
+// already. Kept short so that rise plus that stagger does not carry the
+// topmost one above y=0, where it would simply be clipped away - see ZZZ_TOP.
 #define ZZZ_RISE 12
+// Flush to the top of the box, mirroring how DIALOGUE_BOTTOM sits flush to
+// the bottom: the eyes' sleep z's and a waking/typing remark are independent
+// now (see the dialogue comment above), so this needs its own anchor rather
+// than sharing the dialogue's. 30 leaves the same 4px margin at full rise and
+// stagger as DIALOGUE_BOTTOM leaves at the other edge: the topmost z (zy=14)
+// climbs ZZZ_RISE(12) further, landing at 30-14-12=4.
+#define ZZZ_TOP 30
 
 enum eye_shape {
     SHAPE_BAR,
@@ -1771,9 +1790,10 @@ static void init_dialogue(struct zmk_widget_eyes_status *widget) {
 }
 
 static void init_zzz(struct zmk_widget_eyes_status *widget) {
-    // Offset from the same centred anchor a one-line remark is typed at. The
-    // first z sits on that baseline and the others climb up and to the right
-    // of it, staggered so they read as a sequence rather than a pulse.
+    // Centred at the top of the box, independent of wherever dialogue happens
+    // to be anchored - see ZZZ_TOP. The first z sits on that baseline and the
+    // others climb up and to the right of it, staggered so they read as a
+    // sequence rather than a pulse.
     static const int16_t zx[3] = {-26, -13, 0};
     static const int16_t zy[3] = {0, 7, 14};
 
@@ -1783,7 +1803,7 @@ static void init_zzz(struct zmk_widget_eyes_status *widget) {
         // the next layout pass - so reading it here returned zero, and the rise
         // animation then drove y from zero, overriding the alignment and
         // pinning the z's to the top of the widget.
-        const int16_t base = (int16_t)(DIALOGUE_BOTTOM - dialogue_line_h - zy[i]);
+        const int16_t base = (int16_t)(ZZZ_TOP - zy[i]);
 
         widget->zzz[i] = lv_label_create(widget->obj);
         lv_label_set_text(widget->zzz[i], "z");
@@ -1803,8 +1823,12 @@ static void init_zzz(struct zmk_widget_eyes_status *widget) {
         lv_anim_set_var(&o, widget->zzz[i]);
         lv_anim_set_exec_cb(&o, fade_anim_opa);
         lv_anim_set_values(&o, LV_OPA_TRANSP, LV_OPA_COVER);
-        lv_anim_set_time(&o, ZZZ_CYCLE_MS / 2);
-        lv_anim_set_playback_time(&o, ZZZ_CYCLE_MS / 2);
+        lv_anim_set_time(&o, ZZZ_FADE_MS);
+        lv_anim_set_playback_time(&o, ZZZ_FADE_MS);
+        // The hold: without it, playback started the instant the forward run
+        // reached LV_OPA_COVER, so the z was only ever at full opacity for a
+        // single frame - it read as a flash rather than a visible "z".
+        lv_anim_set_playback_delay(&o, ZZZ_HOLD_MS);
         lv_anim_set_delay(&o, delay);
         lv_anim_set_repeat_count(&o, LV_ANIM_REPEAT_INFINITE);
         lv_anim_start(&o);
